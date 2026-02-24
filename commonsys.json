@@ -1,0 +1,19 @@
+{
+  "hospital_id": "string",
+  "name": "string",
+  "location": {"lat": number, "lon": number},
+  "capacity": {
+    "beds_total": number,
+    "beds_available": number,
+    "icu_beds": number,
+    "trauma_center": boolean,
+    "burn_unit": boolean,
+    "pediatric": boolean
+  },
+  "staff": {
+    "doctors": number,
+    "nurses": number,
+    "specialists": ["string"]
+  },
+  "last_updated": "ISO timestamp"
+}

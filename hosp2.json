@@ -1,0 +1,22 @@
+{
+  "hospitalID": "northside_medical",
+  "hospitalName": "Northside Medical Center",
+  "coordinates": {
+    "lat": 64.1312,
+    "lng": -21.8987
+  },
+  "bedCapacity": 150,
+  "availableBeds": 30,
+  "ICUBeds": 5,
+  "isTraumaCenter": false,
+  "isPediatric": true,
+  "staffInfo": {
+    "numDoctors": 35,
+    "numNurses": 90,
+    "specialties": [
+      "pediatrics",
+      "neurology"
+    ]
+  },
+  "lastUpdate": "2026-02-24T11:30:00Z"
+}

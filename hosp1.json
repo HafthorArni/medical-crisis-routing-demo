@@ -1,0 +1,22 @@
+{
+  "hospital_id": "city_general",
+  "name": "City General Hospital",
+  "location": {
+    "latitude": 64.1265,
+    "longitude": -21.8174
+  },
+  "total_beds": 200,
+  "available_beds": 45,
+  "icu_beds": 10,
+  "has_trauma_center": true,
+  "has_burn_unit": false,
+  "staff": {
+    "doctors": 50,
+    "nurses": 120,
+    "specialists": [
+      "trauma",
+      "cardiology"
+    ]
+  },
+  "last_updated": "2026-02-24T12:00:00Z"
+}
