@@ -841,7 +841,14 @@
     }
 
     function renderHotspots() {
+      // 1. Capture the currently open cluster popup before clearing layers
+      let openClusterIndex = null;
+      if (map && map._popup && map._popup.options && 'clusterIndex' in map._popup.options) {
+          openClusterIndex = map._popup.options.clusterIndex;
+      }
+
       demoHotspotsLayer.clearLayers();
+      
       if (!document.getElementById("showHotspots").checked && !document.getElementById("clusterMode").checked) {
           enforceZOrder();
           return;
@@ -850,6 +857,9 @@
       const showRed = document.getElementById("triRed").checked;
       const showYellow = document.getElementById("triYellow").checked;
       const showGreen = document.getElementById("triGreen").checked;
+      
+      // Keep track of the newly generated polygons to re-attach the popup
+      let clusterPolygons = {};
 
       activeClusters.forEach((c, index) => {
         if (isolatedClusterCaseIds) {
@@ -857,8 +867,59 @@
             if (!hasIsolated) return;
         }
 
+        let patientDetailsHtml = '';
+        if (isolatedClusterCaseIds) {
+            patientDetailsHtml = `<div style="margin-top: 12px; max-height: 220px; overflow-y: auto; text-align: left; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 6px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.05);">`;
+            patientDetailsHtml += `<div style="font-weight: bold; margin-bottom: 6px; color: #444; border-bottom: 1px solid #ddd; padding-bottom: 4px;">Patients & Assignments</div>`;
+            
+            let clusterPatients = c.cases.map(caseId => {
+                return { 
+                    patient: currentCases.find(f => f.properties.case_id === caseId),
+                    route: currentRoutes.find(r => r.case_id === caseId)
+                };
+            }).filter(item => {
+                if (!item.patient) return false;
+                const triage = (item.patient.properties.nato_triage || "").toLowerCase();
+                let isVisible = false;
+                if (showRed && (triage.includes("red") || triage.includes("immediate"))) isVisible = true;
+                if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) isVisible = true;
+                if (showGreen && (triage.includes("green") || triage.includes("minimal"))) isVisible = true;
+                return isVisible;
+            });
+            
+            clusterPatients.sort((a,b) => {
+                const svA = a.patient.properties.nato_triage.toLowerCase().includes("red") ? 3 : (a.patient.properties.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
+                const svB = b.patient.properties.nato_triage.toLowerCase().includes("red") ? 3 : (b.patient.properties.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
+                return svB - svA; 
+            });
+
+            if (clusterPatients.length === 0) {
+                 patientDetailsHtml += `<div style="color: #888; font-style: italic;">No patients match current filters.</div>`;
+            } else {
+                clusterPatients.forEach(item => {
+                    const p = item.patient.properties;
+                    const r = item.route;
+                    const tColor = triageColor(p.nato_triage);
+                    
+                    let destStr = r ? 
+                        `<span style="color: #0a7; font-weight: 500;">&rarr; ${r.facility_name} (${r.distance_km.toFixed(1)} km)</span><br><span style="font-size: 10px; color: #888;">${r.reason}</span>` : 
+                        `<span style="color: #b60; font-weight: 500;">&rarr; Unassigned / Pending</span>`;
+
+                    patientDetailsHtml += `
+                        <div style="margin-bottom:6px; padding-bottom: 6px; border-bottom: 1px solid rgba(0,0,0,0.05);">
+                            <b style="color:${tColor}; font-size: 14px; line-height: 10px;">&bull;</b> 
+                            <span style="color: #0078D7; text-decoration: underline; cursor: pointer;" onclick="showPatient(${p.case_id})"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}<br>
+                            ${destStr}
+                        </div>`;
+                });
+            }
+            patientDetailsHtml += `</div>`;
+        }
+
+        const popupWidth = isolatedClusterCaseIds ? '260px' : '170px';
+
         const popupHTML = `
-          <div style="font:13px/1.25 system-ui,sans-serif; text-align: center; min-width: 170px;">
+          <div style="font:13px/1.25 system-ui,sans-serif; text-align: center; min-width: ${popupWidth};">
             <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
               <b style="color: #111; font-size: 14px; text-transform: uppercase;">Crisis Cluster</b>
             </div>
@@ -880,7 +941,7 @@
             ${!isolatedClusterCaseIds ? `
             <div style="margin-top: 10px; text-align: center;">
                 <button onclick="isolateClusterByIndex(${index})" style="width: 100%; background: #0078D7; color: white; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer;">Isolate Cluster</button>
-            </div>` : ''}
+            </div>` : patientDetailsHtml}
           </div>
         `;
 
@@ -894,15 +955,15 @@
         let currentCumulativeCount = 0;
         let previousCoords = null;
 
-        activeCats.forEach((cat, index) => {
+        activeCats.forEach((cat, idx) => {
             currentCumulativeCount += cat.count;
             
             let currentRadius = 2000 + (currentCumulativeCount * 800);
             let currentCoords = getCircleCoords(c.lat, c.lon, currentRadius);
 
-            let latlngs = index === 0 ? [currentCoords] : [currentCoords, [...previousCoords].reverse()];
+            let latlngs = idx === 0 ? [currentCoords] : [currentCoords, [...previousCoords].reverse()];
 
-            L.polygon(latlngs, {
+            let poly = L.polygon(latlngs, {
                 color: cat.color,
                 fillColor: cat.color,
                 fillOpacity: 0.35, 
@@ -910,16 +971,23 @@
                 dashArray: '6, 6',
                 interactive: true 
             })
-            .bindPopup(popupHTML)
+            .bindPopup(popupHTML, { clusterIndex: index, autoPan: false })
             .addTo(demoHotspotsLayer);
+
+            if (idx === 0) clusterPolygons[index] = poly;
 
             previousCoords = currentCoords;
         });
       });
 
       enforceZOrder();
-    }
 
+      // 2. Immediately reopen the popup if it was open before the redraw
+      if (openClusterIndex !== null && clusterPolygons[openClusterIndex]) {
+          clusterPolygons[openClusterIndex].openPopup();
+      }
+    }
+    
     function renderRoutes() {
       demoRoutesLayer.clearLayers();
       
