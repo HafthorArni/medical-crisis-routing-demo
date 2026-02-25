@@ -172,6 +172,107 @@
     let assignedPatientsByFacility = {}; 
     let activeClusters = [];
 
+    // --- OSRM Routing Queue for Road-snapping ---
+    let osrmQueue = [];
+    let osrmCache = {}; 
+    let isFetchingOsrm = false;
+    let osrmGeneration = 0;
+
+    async function processOsrmQueue(generation) {
+        if (isFetchingOsrm) return;
+        isFetchingOsrm = true;
+
+        const summaryEl = document.getElementById("routeSummary");
+        let baseSummary = summaryEl.innerHTML.split('<br>')[0];
+
+        let totalTasks = osrmQueue.length;
+        let processed = 0;
+
+        while (osrmQueue.length > 0) {
+            // Stop processing if user re-triggered routing
+            if (generation !== osrmGeneration) break;
+
+            const task = osrmQueue.shift();
+            processed++;
+
+            // If user cleared the layer via toggle, skip
+            if (!demoRoutesLayer.hasLayer(task.visualLine)) continue;
+
+            try {
+                // Round to ~1km groups so neighboring patients use same API response
+                const startKey = `${task.start[0].toFixed(3)},${task.start[1].toFixed(3)}`;
+                const endKey = `${task.end[0].toFixed(3)},${task.end[1].toFixed(3)}`;
+                const cacheKey = `${startKey}|${endKey}`;
+
+                // If currently asking API for this area, wait in back of queue
+                if (osrmCache[cacheKey] === "FETCHING") {
+                    osrmQueue.push(task); 
+                    await new Promise(r => setTimeout(r, 100));
+                    continue;
+                }
+
+                // If already calculated, apply instantly
+                if (osrmCache[cacheKey]) {
+                    if (osrmCache[cacheKey] !== "NOROUTE") {
+                        task.visualLine.setLatLngs(osrmCache[cacheKey]);
+                        if (task.hitLine) task.hitLine.setLatLngs(osrmCache[cacheKey]);
+                    }
+                    continue;
+                }
+
+                osrmCache[cacheKey] = "FETCHING";
+
+                if (processed % 2 === 0 || processed === 1) {
+                    const pct = Math.round((processed / totalTasks) * 100);
+                    summaryEl.innerHTML = `${baseSummary}<br><small style="color:#b60;">Snapping to roads... ${pct}%</small>`;
+                }
+
+                const url = `https://router.project-osrm.org/route/v1/driving/${task.start[0]},${task.start[1]};${task.end[0]},${task.end[1]}?overview=simplified&geometries=geojson`;
+                const res = await fetch(url);
+                
+                if (res.status === 429) {
+                    osrmCache[cacheKey] = null; // Free up lock
+                    osrmQueue.unshift(task); // Try again
+                    processed--; 
+                    console.warn("OSRM API rate limit hit. Waiting 2.5s...");
+                    await new Promise(r => setTimeout(r, 2500));
+                    continue;
+                }
+
+                if (!res.ok) {
+                    console.warn(`OSRM failed (HTTP ${res.status}). Coordinates: ${cacheKey}`);
+                    osrmCache[cacheKey] = "NOROUTE";
+                    continue;
+                }
+
+                const data = await res.json();
+                if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+                    // OSRM returns [lon, lat], Leaflet polyline needs [lat, lon]
+                    const roadCoords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                    osrmCache[cacheKey] = roadCoords;
+                    
+                    task.visualLine.setLatLngs(roadCoords);
+                    if (task.hitLine) task.hitLine.setLatLngs(roadCoords);
+                } else {
+                    osrmCache[cacheKey] = "NOROUTE";
+                }
+
+                // Sleep to respect public OSRM API limits
+                await new Promise(r => setTimeout(r, 150));
+
+            } catch (e) {
+                console.error("OSRM Routing iteration failed:", e);
+                // Fail gracefully so the while loop doesn't permanently crash
+            }
+        }
+        
+        isFetchingOsrm = false;
+        
+        if (generation === osrmGeneration) {
+            summaryEl.innerHTML = `${baseSummary}<br><small style="color:#0a7; font-weight:bold;">Road snapping complete</small>`;
+        }
+    }
+
     // Helper function to strictly enforce the Z-Order on the Canvas
     function enforceZOrder() {
         if (map.hasLayer(demoHotspotsLayer)) demoHotspotsLayer.bringToBack();
@@ -678,6 +779,12 @@
 
     function renderRoutes() {
       demoRoutesLayer.clearLayers();
+      
+      // Increment generation and unlock queue to prevent ghost tasks and deadlocks
+      osrmGeneration++;
+      isFetchingOsrm = false; 
+      osrmQueue = []; 
+
       if (!document.getElementById("showRoutes").checked) {
           enforceZOrder();
           return;
@@ -743,8 +850,15 @@
                 </div>
               `;
 
-              L.polyline(routeCoords, { weight: dynamicWeight * 2, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
-              L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).bindPopup(routePopupHTML).addTo(demoRoutesLayer);
+              const visualLine = L.polyline(routeCoords, { weight: dynamicWeight * 2, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              const hitLine = L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).bindPopup(routePopupHTML).addTo(demoRoutesLayer);
+              
+              osrmQueue.push({
+                  start: [cr.cluster.lon, cr.cluster.lat], 
+                  end: cr.facility_coord,
+                  visualLine: visualLine,
+                  hitLine: hitLine
+              });
           });
           
       } else {
@@ -771,12 +885,21 @@
               `;
 
               const routeCoords = [[a.case_coord[1], a.case_coord[0]], [a.facility_coord[1], a.facility_coord[0]]];
-              L.polyline(routeCoords, { weight: dynamicWeight, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
-              L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).bindPopup(routePopupHTML).addTo(demoRoutesLayer);
+              const visualLine = L.polyline(routeCoords, { weight: dynamicWeight, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              const hitLine = L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).bindPopup(routePopupHTML).addTo(demoRoutesLayer);
+              
+              osrmQueue.push({
+                  start: a.case_coord,
+                  end: a.facility_coord,
+                  visualLine: visualLine,
+                  hitLine: hitLine
+              });
             }
           });
       }
+      
       enforceZOrder();
+      processOsrmQueue(osrmGeneration); // Pass generation ID
     }
 
     async function runRouting() {
@@ -797,7 +920,7 @@
         });
         const j = await r.json();
         
-        document.getElementById("routeSummary").textContent = `${j.results.assigned}/${j.results.cases_considered} assigned`;
+        document.getElementById("routeSummary").innerHTML = `${j.results.assigned}/${j.results.cases_considered} assigned`;
         currentRoutes = j.routes_for_map || [];
 
         assignedFacilityIds.clear();
