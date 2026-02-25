@@ -161,6 +161,76 @@
     const demoFacilitiesLayer = L.featureGroup().addTo(map);
     const demoCasesLayer = L.featureGroup().addTo(map);
 
+    // --- OVERLAPPING ROUTES HANDLER ---
+    // When the map is clicked, scan ALL rendered routes to see which ones are underneath the cursor.
+    // This allows us to combine overlapping road networks into a single cohesive patient manifest.
+    demoRoutesLayer.on('click', function(e) {
+        const clickPoint = map.latLngToLayerPoint(e.latlng);
+        let combinedPatients = new Map();
+        let destinations = new Set();
+        
+        demoRoutesLayer.eachLayer((layer) => {
+            // Only process our invisible "hit lines"
+            if (layer.isHitLine && layer.routeData) {
+                const latlngs = layer.getLatLngs();
+                if (!latlngs || latlngs.length < 2) return;
+                
+                let minDist = Infinity;
+                // Calculate distance from cursor to every segment of the polyline
+                for (let i = 0; i < latlngs.length - 1; i++) {
+                    const p1 = map.latLngToLayerPoint(latlngs[i]);
+                    const p2 = map.latLngToLayerPoint(latlngs[i+1]);
+                    const dist = L.LineUtil.pointToSegmentDistance(clickPoint, p1, p2);
+                    if (dist < minDist) minDist = dist;
+                }
+                
+                // If the cursor is within 15 pixels of the line, it's a hit
+                if (minDist <= 15) {
+                    destinations.add(layer.routeData.facility_name);
+                    layer.routeData.patients.forEach(p => {
+                        // Using a Map with case_id prevents duplicating patients if geometries glitch
+                        combinedPatients.set(p.case_id, p);
+                    });
+                }
+            }
+        });
+
+        if (combinedPatients.size > 0) {
+            // Sort patients by severity (Red -> Yellow -> Green) for display
+            const pts = Array.from(combinedPatients.values()).sort((a,b) => {
+                const svA = a.nato_triage.toLowerCase().includes("red") ? 3 : (a.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
+                const svB = b.nato_triage.toLowerCase().includes("red") ? 3 : (b.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
+                return svB - svA; 
+            });
+            
+            let destStr = Array.from(destinations).join(', ');
+
+            const popupHTML = `
+              <div style="font:13px/1.25 system-ui,sans-serif; min-width: 250px;">
+                <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
+                  <b style="font-size: 14px;">Traffic on this Route Segment</b>
+                </div>
+                <div class="kv"><span class="k mono">Destinations:</span> ${destStr}</div>
+                <div class="kv" style="margin-top: 6px;"><span class="k mono">Patients Traveling (${pts.length}):</span></div>
+                <div style="max-height: 150px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">
+                  ${pts.map(p => {
+                     const pCol = triageColor(p.nato_triage);
+                     return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
+                               <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
+                               <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}
+                             </div>`;
+                  }).join('')}
+                </div>
+              </div>
+            `;
+
+            L.popup()
+             .setLatLng(e.latlng)
+             .setContent(popupHTML)
+             .openOn(map);
+        }
+    });
+
     let healthsitesWays = null;
     let healthsitesNodes = null;
     
@@ -858,27 +928,13 @@
               );
               
               const routeCoords = [edgeCoord, [cr.facility_coord[1], cr.facility_coord[0]]];
-              const routePopupHTML = `
-                <div style="font:13px/1.25 system-ui,sans-serif; min-width: 250px;">
-                  <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
-                    <b style="font-size: 14px;">Cluster Evacuation Route</b>
-                  </div>
-                  <div class="kv"><span class="k mono">Destination:</span> ${cr.facility_name}</div>
-                  <div class="kv" style="margin-top: 6px;"><span class="k mono">Patients (${cr.patients.length}):</span></div>
-                  <div style="max-height: 150px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">
-                    ${cr.patients.map(p => {
-                       const pCol = triageColor(p.nato_triage);
-                       return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
-                                 <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
-                                 <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}
-                               </div>`;
-                    }).join('')}
-                  </div>
-                </div>
-              `;
 
               const visualLine = L.polyline(routeCoords, { weight: dynamicWeight * 2, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
-              const hitLine = L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).bindPopup(routePopupHTML).addTo(demoRoutesLayer);
+              
+              // Instead of binding the popup immediately, we attach the data so the map click handler can scan it
+              const hitLine = L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).addTo(demoRoutesLayer);
+              hitLine.isHitLine = true;
+              hitLine.routeData = cr;
               
               osrmQueue.push({
                   start: [cr.cluster.lon, cr.cluster.lat], 
@@ -924,33 +980,15 @@
 
           Object.values(aggregatedRoutes).forEach(g => {
               const col = g.severity === 3 ? "#d33" : (g.severity === 2 ? "#d9a300" : "#2a7");
-              
-              const routePopupHTML = `
-                <div style="font:13px/1.25 system-ui,sans-serif; min-width: 250px;">
-                  <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
-                    <b style="font-size: 14px;">Evacuation Route</b>
-                  </div>
-                  <div class="kv"><span class="k mono">Destination:</span> ${g.facility_name}</div>
-                  <div class="kv"><span class="k mono">Distance:</span> ${g.distance_km.toFixed(1)} km</div>
-                  <div class="kv"><span class="k mono">Reasoning:</span> ${g.reason}</div>
-                  <div class="kv" style="margin-top: 6px;"><span class="k mono">Patients (${g.patients.length}):</span></div>
-                  <div style="max-height: 150px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">
-                    ${g.patients.map(p => {
-                       const pCol = triageColor(p.nato_triage);
-                       return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
-                                 <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
-                                 <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}
-                               </div>`;
-                    }).join('')}
-                  </div>
-                </div>
-              `;
-
               const baseWeight = Math.min(6, dynamicWeight * (1 + (g.patients.length - 1) * 0.15));
 
               const routeCoords = [[g.start_coord[1], g.start_coord[0]], [g.facility_coord[1], g.facility_coord[0]]];
               const visualLine = L.polyline(routeCoords, { weight: baseWeight, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
-              const hitLine = L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).bindPopup(routePopupHTML).addTo(demoRoutesLayer);
+              
+              // Instead of binding the popup immediately, we attach the data so the map click handler can scan it
+              const hitLine = L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).addTo(demoRoutesLayer);
+              hitLine.isHitLine = true;
+              hitLine.routeData = g;
               
               osrmQueue.push({
                   start: g.start_coord,
