@@ -112,6 +112,7 @@
 
       <div class="row">
         <button id="btnRoute">Run MASCAL Routing</button>
+        <button id="btnClearIsolation" style="display:none; color: #d33; border-color: #d33;">Clear Isolation</button>
         <span class="pill"><input id="showRoutes" type="checkbox" checked /> <label for="showRoutes">Show routes</label></span>
         <span class="pill"><input id="showHotspots" type="checkbox" checked /> <label for="showHotspots">Hotspots</label></span>
         <span class="pill"><input id="clusterMode" type="checkbox" /> <label for="clusterMode">Cluster Mode</label></span>
@@ -171,6 +172,9 @@
     let assignedFacilityIds = new Set(); 
     let assignedPatientsByFacility = {}; 
     let activeClusters = [];
+    
+    // Isolation State
+    let isolatedClusterCaseIds = null;
 
     // --- OSRM Routing Queue for Road-snapping ---
     let osrmQueue = [];
@@ -189,31 +193,26 @@
         let processed = 0;
 
         while (osrmQueue.length > 0) {
-            // Stop processing if user re-triggered routing
             if (generation !== osrmGeneration) break;
 
             const task = osrmQueue.shift();
             processed++;
 
-            // If user cleared the layer via toggle, skip
             if (!demoRoutesLayer.hasLayer(task.visualLine)) continue;
 
             try {
-                // Round to ~1km groups so neighboring patients use same API response
                 const startKey = `${task.start[0].toFixed(3)},${task.start[1].toFixed(3)}`;
                 const endKey = `${task.end[0].toFixed(3)},${task.end[1].toFixed(3)}`;
                 const cacheKey = `${startKey}|${endKey}`;
 
-                // If currently asking API for this area, wait in back of queue
                 if (osrmCache[cacheKey] === "FETCHING") {
                     osrmQueue.push(task); 
                     await new Promise(r => setTimeout(r, 100));
                     continue;
                 }
 
-                // If already calculated, apply instantly
                 if (osrmCache[cacheKey]) {
-                    if (osrmCache[cacheKey] !== "NOROUTE") {
+                    if (osrmCache[cacheKey] !== "NOROUTE" && osrmCache[cacheKey] !== "FETCHING") {
                         task.visualLine.setLatLngs(osrmCache[cacheKey]);
                         if (task.hitLine) task.hitLine.setLatLngs(osrmCache[cacheKey]);
                     }
@@ -231,8 +230,8 @@
                 const res = await fetch(url);
                 
                 if (res.status === 429) {
-                    osrmCache[cacheKey] = null; // Free up lock
-                    osrmQueue.unshift(task); // Try again
+                    osrmCache[cacheKey] = null; 
+                    osrmQueue.unshift(task); 
                     processed--; 
                     console.warn("OSRM API rate limit hit. Waiting 2.5s...");
                     await new Promise(r => setTimeout(r, 2500));
@@ -246,23 +245,29 @@
                 }
 
                 const data = await res.json();
+                let roadCoords = "NOROUTE";
+                
                 if (data.code === "Ok" && data.routes && data.routes.length > 0) {
-                    // OSRM returns [lon, lat], Leaflet polyline needs [lat, lon]
-                    const roadCoords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
-                    osrmCache[cacheKey] = roadCoords;
-                    
+                    roadCoords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                }
+                
+                osrmCache[cacheKey] = roadCoords;
+                
+                fetch("/api/demo/osrm_cache", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({ [cacheKey]: roadCoords })
+                }).catch(e => console.warn("Cache save failed", e));
+                
+                if (roadCoords !== "NOROUTE") {
                     task.visualLine.setLatLngs(roadCoords);
                     if (task.hitLine) task.hitLine.setLatLngs(roadCoords);
-                } else {
-                    osrmCache[cacheKey] = "NOROUTE";
                 }
 
-                // Sleep to respect public OSRM API limits
                 await new Promise(r => setTimeout(r, 150));
 
             } catch (e) {
                 console.error("OSRM Routing iteration failed:", e);
-                // Fail gracefully so the while loop doesn't permanently crash
             }
         }
         
@@ -273,12 +278,11 @@
         }
     }
 
-    // Helper function to strictly enforce the Z-Order on the Canvas
     function enforceZOrder() {
         if (map.hasLayer(demoHotspotsLayer)) demoHotspotsLayer.bringToBack();
         if (map.hasLayer(demoRoutesLayer)) demoRoutesLayer.bringToBack();
         if (map.hasLayer(demoFacilitiesLayer)) demoFacilitiesLayer.bringToFront();
-        if (map.hasLayer(demoCasesLayer)) demoCasesLayer.bringToFront(); // Cases always on top
+        if (map.hasLayer(demoCasesLayer)) demoCasesLayer.bringToFront(); 
     }
 
     function triageColor(triage) {
@@ -369,7 +373,6 @@
       return html;
     }
 
-    // Function to pan to and display a patient's full details
     window.showPatient = function(caseId) {
         const patient = currentCases.find(c => c.properties.case_id === caseId);
         
@@ -391,7 +394,6 @@
         }
     };
 
-    // Math helper to connect route lines to the visual edge of the cluster
     function getEdgeCoord(centerLat, centerLon, destLat, destLon, radiusMeters) {
         const R = 6378137; 
         const dLat = (destLat - centerLat) * Math.PI / 180;
@@ -413,7 +415,6 @@
         ];
     }
 
-    // Build clusters independently so cases and routes can share the same data
     function buildClusters() {
         activeClusters = [];
         const showRed = document.getElementById("triRed").checked;
@@ -421,7 +422,6 @@
         const showGreen = document.getElementById("triGreen").checked;
         const CLUSTER_THRESHOLD_METERS = 2000;
 
-        // Pass 1: Group ALL cases into geographical clusters, regardless of visibility
         currentCases.forEach(f => {
             const triage = (f.properties.nato_triage || "").toLowerCase();
             let isRed = false, isYellow = false, isGreen = false;
@@ -444,7 +444,6 @@
             }
 
             if (foundCluster) {
-                // Update centroid and totals based on all cases
                 foundCluster.lat = ((foundCluster.lat * foundCluster.totalCount) + lat) / (foundCluster.totalCount + 1);
                 foundCluster.lon = ((foundCluster.lon * foundCluster.totalCount) + lon) / (foundCluster.totalCount + 1);
                 foundCluster.totalCount++;
@@ -463,7 +462,6 @@
             }
         });
 
-        // Pass 2: Filter and determine display properties based on toggles
         activeClusters = activeClusters.filter(c => {
             c.visibleCount = 0;
             c.severity = 1;
@@ -480,15 +478,11 @@
                 c.visibleCount += c.greenCount; 
             }
             
-            // Keep clusters that have > 4 cases total AND at least 1 currently visible case
             return c.totalCount > 4 && c.visibleCount > 0;
         });
 
-        // Pass 3: Set styling
         activeClusters.forEach(c => {
-            c.count = c.visibleCount; // The main big number shows what is currently filtered
-            
-            // SHAPE SIZING FIX: Base the visual circle size on the VISIBLE cases, not total cases
+            c.count = c.visibleCount; 
             c.radiusMeters = 2000 + (c.visibleCount * 800); 
             
             if (c.severity === 3) c.color = "#d33";
@@ -568,6 +562,14 @@
         routeSummaryEl.textContent = "Loading data...";
 
         try {
+            try {
+                const cacheRes = await fetch("/api/demo/osrm_cache");
+                if (cacheRes.ok) {
+                    const serverCache = await cacheRes.json();
+                    osrmCache = { ...serverCache, ...osrmCache };
+                }
+            } catch(e) { console.warn("Failed to load OSRM cache from server", e); }
+
             const caseRes = await fetch("/api/demo/cases");
             const caseFc = await caseRes.json();
             currentCases = caseFc.features || [];
@@ -603,6 +605,15 @@
         const currentZoom = map.getZoom(); 
         document.getElementById("radiusDisplay").textContent = bufferVal.toFixed(1);
         
+        let activeIsolatedFacilities = new Set();
+        if (isolatedClusterCaseIds) {
+            currentRoutes.forEach(r => {
+                if (isolatedClusterCaseIds.has(r.case_id) && r.facility_id) {
+                    activeIsolatedFacilities.add(String(r.facility_id));
+                }
+            });
+        }
+        
         demoFacilitiesLayer.clearLayers();
         if (!casualtyBounds) return;
 
@@ -616,7 +627,11 @@
                               lat >= casualtyBounds.minLat - bufferVal && lat <= casualtyBounds.maxLat + bufferVal);
             
             const isUsed = assignedFacilityIds.has(facId);
-            const shouldShow = inBounds && (!hideUnused || isUsed);
+            let shouldShow = inBounds && (!hideUnused || isUsed);
+
+            if (isolatedClusterCaseIds) {
+                shouldShow = activeIsolatedFacilities.has(facId);
+            }
 
             if (shouldShow) {
                 const cap = p.capacity || {};
@@ -643,7 +658,6 @@
     function renderCases() {
       demoCasesLayer.clearLayers();
       
-      // In Cluster Mode, individual casualty markers are hidden completely
       if (document.getElementById("clusterMode").checked) {
           enforceZOrder();
           return; 
@@ -656,6 +670,8 @@
 
       let count = 0;
       currentCases.forEach(f => {
+        if (isolatedClusterCaseIds && !isolatedClusterCaseIds.has(f.properties.case_id)) return;
+
         const triage = (f.properties.nato_triage || "").toLowerCase();
         let isVisible = false;
         if (showRed && (triage.includes("red") || triage.includes("immediate"))) isVisible = true;
@@ -683,10 +699,9 @@
       enforceZOrder();
     }
 
-    // Math helper to generate exact geographic coordinates for a circular polygon
     function getCircleCoords(lat, lon, radiusMeters, points = 64) {
         const coords = [];
-        const R = 6378137; // Earth's radius in meters
+        const R = 6378137; 
         const d = radiusMeters / R;
         const lat1 = lat * Math.PI / 180;
         const lon1 = lon * Math.PI / 180;
@@ -711,7 +726,12 @@
       const showYellow = document.getElementById("triYellow").checked;
       const showGreen = document.getElementById("triGreen").checked;
 
-      activeClusters.forEach(c => {
+      activeClusters.forEach((c, index) => {
+        if (isolatedClusterCaseIds) {
+            const hasIsolated = c.cases.some(id => isolatedClusterCaseIds.has(id));
+            if (!hasIsolated) return;
+        }
+
         const popupHTML = `
           <div style="font:13px/1.25 system-ui,sans-serif; text-align: center; min-width: 170px;">
             <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
@@ -732,37 +752,35 @@
               <span style="color: #d9a300;" title="Delayed (Yellow)">T2: ${c.yellowCount || 0}</span>
               <span style="color: #2a7;" title="Minimal (Green)">T3: ${c.greenCount || 0}</span>
             </div>
+            ${!isolatedClusterCaseIds ? `
+            <div style="margin-top: 10px; text-align: center;">
+                <button onclick="isolateClusterByIndex(${index})" style="width: 100%; background: #0078D7; color: white; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer;">Isolate Cluster</button>
+            </div>` : ''}
           </div>
         `;
 
-        // 1. Gather active categories and their counts
         let activeCats = [];
         if (showRed && c.redCount > 0) activeCats.push({ color: "#d33", count: c.redCount });
         if (showYellow && c.yellowCount > 0) activeCats.push({ color: "#d9a300", count: c.yellowCount });
         if (showGreen && c.greenCount > 0) activeCats.push({ color: "#2a7", count: c.greenCount });
 
-        // 2. Sort by count ascending (fewest cases = innermost)
         activeCats.sort((a, b) => a.count - b.count);
 
         let currentCumulativeCount = 0;
         let previousCoords = null;
 
-        // 3. Draw concentric polygons (using donuts to prevent color blending)
         activeCats.forEach((cat, index) => {
             currentCumulativeCount += cat.count;
             
-            // Scale radius based on the cumulative share of patients up to this tier
             let currentRadius = 2000 + (currentCumulativeCount * 800);
             let currentCoords = getCircleCoords(c.lat, c.lon, currentRadius);
 
-            // The first tier is solid. 
-            // Subsequent tiers pass the previous tier's coordinates reversed to punch a hole.
             let latlngs = index === 0 ? [currentCoords] : [currentCoords, [...previousCoords].reverse()];
 
             L.polygon(latlngs, {
                 color: cat.color,
                 fillColor: cat.color,
-                fillOpacity: 0.35, // Slightly higher opacity since layers don't stack/blend anymore
+                fillOpacity: 0.35, 
                 weight: 2,
                 dashArray: '6, 6',
                 interactive: true 
@@ -780,7 +798,6 @@
     function renderRoutes() {
       demoRoutesLayer.clearLayers();
       
-      // Increment generation and unlock queue to prevent ghost tasks and deadlocks
       osrmGeneration++;
       isFetchingOsrm = false; 
       osrmQueue = []; 
@@ -801,8 +818,9 @@
       if (clusterMode) {
           let clusterRoutes = {};
           
-          // Aggregate individual patient routes into cluster-to-facility routes
           currentRoutes.forEach(a => {
+              if (isolatedClusterCaseIds && !isolatedClusterCaseIds.has(a.case_id)) return;
+
               const triage = (a.nato_triage || "").toLowerCase();
               let isVisible = false;
               if (showRed && (triage.includes("red") || triage.includes("immediate"))) isVisible = true;
@@ -841,12 +859,21 @@
               
               const routeCoords = [edgeCoord, [cr.facility_coord[1], cr.facility_coord[0]]];
               const routePopupHTML = `
-                <div style="font:13px/1.25 system-ui,sans-serif; min-width: 220px;">
+                <div style="font:13px/1.25 system-ui,sans-serif; min-width: 250px;">
                   <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
                     <b style="font-size: 14px;">Cluster Evacuation Route</b>
                   </div>
-                  <div class="kv"><span class="k mono">Patients:</span> ${cr.patients.length} total</div>
                   <div class="kv"><span class="k mono">Destination:</span> ${cr.facility_name}</div>
+                  <div class="kv" style="margin-top: 6px;"><span class="k mono">Patients (${cr.patients.length}):</span></div>
+                  <div style="max-height: 150px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">
+                    ${cr.patients.map(p => {
+                       const pCol = triageColor(p.nato_triage);
+                       return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
+                                 <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
+                                 <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}
+                               </div>`;
+                    }).join('')}
+                  </div>
                 </div>
               `;
 
@@ -862,7 +889,11 @@
           });
           
       } else {
+          let aggregatedRoutes = {};
+          
           currentRoutes.forEach(a => {
+            if (isolatedClusterCaseIds && !isolatedClusterCaseIds.has(a.case_id)) return;
+
             const triage = (a.nato_triage || "").toLowerCase();
             let isVisible = false;
             if (showRed && (triage.includes("red") || triage.includes("immediate"))) isVisible = true;
@@ -870,36 +901,68 @@
             if (showGreen && (triage.includes("green") || triage.includes("minimal"))) isVisible = true;
 
             if (isVisible) {
-              const col = triageColor(a.nato_triage);
+              const startKey = `${a.case_coord[0].toFixed(2)},${a.case_coord[1].toFixed(2)}`;
+              const endKey = `${a.facility_coord[0].toFixed(3)},${a.facility_coord[1].toFixed(3)}`;
+              const key = `${startKey}|${endKey}`;
+
+              if (!aggregatedRoutes[key]) {
+                  aggregatedRoutes[key] = {
+                      patients: [],
+                      facility_name: a.facility_name,
+                      facility_coord: a.facility_coord,
+                      start_coord: a.case_coord,
+                      severity: 1,
+                      distance_km: a.distance_km,
+                      reason: a.reason
+                  };
+              }
+              aggregatedRoutes[key].patients.push(a);
+              let sev = triage.includes("red") ? 3 : (triage.includes("yellow") ? 2 : 1);
+              aggregatedRoutes[key].severity = Math.max(aggregatedRoutes[key].severity, sev);
+            }
+          });
+
+          Object.values(aggregatedRoutes).forEach(g => {
+              const col = g.severity === 3 ? "#d33" : (g.severity === 2 ? "#d9a300" : "#2a7");
+              
               const routePopupHTML = `
-                <div style="font:13px/1.25 system-ui,sans-serif; min-width: 220px;">
+                <div style="font:13px/1.25 system-ui,sans-serif; min-width: 250px;">
                   <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
                     <b style="font-size: 14px;">Evacuation Route</b>
                   </div>
-                  <div class="kv"><span class="k mono">Patient:</span> Case ${a.case_id}</div>
-                  <div class="kv"><span class="k mono">Triage:</span> <span style="color:${col}; font-weight:bold;">${a.nato_triage}</span></div>
-                  <div class="kv"><span class="k mono">Destination:</span> ${a.facility_name}</div>
-                  <div class="kv"><span class="k mono">Distance:</span> ${a.distance_km.toFixed(1)} km</div>
-                  <div class="kv"><span class="k mono">Reasoning:</span> ${a.reason}</div>
+                  <div class="kv"><span class="k mono">Destination:</span> ${g.facility_name}</div>
+                  <div class="kv"><span class="k mono">Distance:</span> ${g.distance_km.toFixed(1)} km</div>
+                  <div class="kv"><span class="k mono">Reasoning:</span> ${g.reason}</div>
+                  <div class="kv" style="margin-top: 6px;"><span class="k mono">Patients (${g.patients.length}):</span></div>
+                  <div style="max-height: 150px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">
+                    ${g.patients.map(p => {
+                       const pCol = triageColor(p.nato_triage);
+                       return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
+                                 <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
+                                 <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}
+                               </div>`;
+                    }).join('')}
+                  </div>
                 </div>
               `;
 
-              const routeCoords = [[a.case_coord[1], a.case_coord[0]], [a.facility_coord[1], a.facility_coord[0]]];
-              const visualLine = L.polyline(routeCoords, { weight: dynamicWeight, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              const baseWeight = Math.min(6, dynamicWeight * (1 + (g.patients.length - 1) * 0.15));
+
+              const routeCoords = [[g.start_coord[1], g.start_coord[0]], [g.facility_coord[1], g.facility_coord[0]]];
+              const visualLine = L.polyline(routeCoords, { weight: baseWeight, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
               const hitLine = L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).bindPopup(routePopupHTML).addTo(demoRoutesLayer);
               
               osrmQueue.push({
-                  start: a.case_coord,
-                  end: a.facility_coord,
+                  start: g.start_coord,
+                  end: g.facility_coord,
                   visualLine: visualLine,
                   hitLine: hitLine
               });
-            }
           });
       }
       
       enforceZOrder();
-      processOsrmQueue(osrmGeneration); // Pass generation ID
+      processOsrmQueue(osrmGeneration); 
     }
 
     async function runRouting() {
@@ -926,7 +989,6 @@
         assignedFacilityIds.clear();
         assignedPatientsByFacility = {};
 
-        // Track the assigned patients to their assigned facility
         currentRoutes.forEach(route => {
             if (route.facility_id) {
                 const facId = String(route.facility_id);
@@ -953,6 +1015,8 @@
     async function resetDemo() {
       assignedFacilityIds.clear(); 
       assignedPatientsByFacility = {};
+      isolatedClusterCaseIds = null;
+      document.getElementById("btnClearIsolation").style.display = "none";
       document.getElementById("hideUnused").checked = false; 
       await fetch("/api/demo/reset", { 
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -963,7 +1027,49 @@
       demoRoutesLayer.clearLayers();
     }
 
-    // Event Listeners
+    window.isolateClusterByIndex = function(idx) {
+        const c = activeClusters[idx];
+        if (!c) return;
+        isolatedClusterCaseIds = new Set(c.cases);
+        document.getElementById("btnClearIsolation").style.display = "inline-block";
+        map.closePopup();
+        
+        let lats = [], lons = [];
+        currentCases.forEach(f => {
+            if (isolatedClusterCaseIds.has(f.properties.case_id)) {
+                lons.push(f.geometry.coordinates[0]);
+                lats.push(f.geometry.coordinates[1]);
+            }
+        });
+        currentRoutes.forEach(r => {
+            if (isolatedClusterCaseIds.has(r.case_id) && r.facility_coord) {
+                lons.push(r.facility_coord[0]);
+                lats.push(r.facility_coord[1]);
+            }
+        });
+
+        if (lats.length > 0 && lons.length > 0) {
+            const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+            const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+            map.flyToBounds([[minLat, minLon], [maxLat, maxLon]], { padding: [50, 50], duration: 1.0 });
+        }
+        
+        updateMapDisplay();
+        renderCases();
+        renderRoutes();
+        renderHotspots();
+    };
+
+    function clearIsolation() {
+        isolatedClusterCaseIds = null;
+        document.getElementById("btnClearIsolation").style.display = "none";
+        updateMapDisplay();
+        renderCases();
+        renderRoutes();
+        renderHotspots();
+    }
+
+    document.getElementById("btnClearIsolation").addEventListener("click", clearIsolation);
     document.getElementById("searchBuffer").addEventListener("input", updateMapDisplay);
     document.getElementById("hideUnused").addEventListener("change", updateMapDisplay); 
     document.getElementById("btnReset").addEventListener("click", resetDemo);
@@ -971,19 +1077,16 @@
     document.getElementById("showRoutes").addEventListener("change", renderRoutes);
     document.getElementById("showHotspots").addEventListener("change", renderHotspots);
     
-    // Cluster Mode specific toggle
     document.getElementById("clusterMode").addEventListener("change", () => {
         renderCases();
         renderRoutes();
         renderHotspots();
     });
     
-    // 1. Direct checkbox clicks (Toggle specific color only)
     document.getElementById("triRed").addEventListener("change", () => { buildClusters(); renderCases(); renderRoutes(); renderHotspots(); });
     document.getElementById("triYellow").addEventListener("change", () => { buildClusters(); renderCases(); renderRoutes(); renderHotspots(); });
     document.getElementById("triGreen").addEventListener("change", () => { buildClusters(); renderCases(); renderRoutes(); renderHotspots(); });
 
-    // 2. Text/Label clicks (Isolate the clicked color)
     document.getElementById("lblRed").addEventListener("click", () => {
       document.getElementById("triRed").checked = true;
       document.getElementById("triYellow").checked = false;
@@ -1021,7 +1124,6 @@
       renderHotspots();
     });
 
-    // Initial Load
     loadAllData();
     refreshHealthsitesStatus().then(() => attachHealthsitesLayers());
 

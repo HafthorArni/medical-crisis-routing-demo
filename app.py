@@ -46,6 +46,11 @@ DEMO_DIR = Path(__file__).resolve().parent / "data"
 DEMO_FACILITIES_GEOJSON = Path(os.getenv("DEMO_FACILITIES_GEOJSON", DEMO_DIR / "sample_facilities.geojson"))
 DEMO_CASES_XLSX = Path(os.getenv("DEMO_CASES_XLSX", DEMO_DIR / "NATO_MASCAL_500_cases.xlsx"))
 
+# --- OSRM Local Cache ---
+DEMO_CACHE_DIR = Path(__file__).resolve().parent / "demo_cache"
+OSRM_CACHE_FILE = DEMO_CACHE_DIR / "osrm_routes.json"
+_osrm_cache_lock = threading.Lock()
+
 # Performance: don't serve/request node tiles until this zoom
 MIN_ZOOM_NODES = 11
 
@@ -215,35 +220,39 @@ def _generate_healthsites_facilities(cases_fc: Dict[str, Any], buffer_val: float
         if geom is None or geom.is_empty:
             continue
 
-        # Add the mojibake fix here
         name = _fix_mojibake(row.get("name"))
         
         if not name or str(name).lower() == "nan":
             name = f"Unnamed Facility ({row.get('osm_id', idx)})"
+            
+        osm_id = row.get("osm_id", idx)
+
+        # --- NEW: Seed random with facility ID so beds/ICU stay constant across restarts ---
+        rng = random.Random(str(osm_id))
 
         # Assign a random Role of Care
-        role_int = random.choices([1, 2, 3, 4], weights=[0.4, 0.3, 0.2, 0.1])[0]
+        role_int = rng.choices([1, 2, 3, 4], weights=[0.4, 0.3, 0.2, 0.1])[0]
         
         # Base Beds
-        beds_total = random.randint(15, 60) * role_int
-        beds_av = int(beds_total * random.uniform(0.1, 0.9))
+        beds_total = rng.randint(15, 60) * role_int
+        beds_av = int(beds_total * rng.uniform(0.1, 0.9))
 
         # ICU
-        icu_total = random.randint(2, 10) * role_int if role_int >= 2 else 0
-        icu_av = int(icu_total * random.uniform(0.1, 0.9))
+        icu_total = rng.randint(2, 10) * role_int if role_int >= 2 else 0
+        icu_av = int(icu_total * rng.uniform(0.1, 0.9))
         
         # Ventilators (typically scales with ICU)
-        vent_total = icu_total * 2 if icu_total > 0 else random.randint(0, 2)
-        vent_av = int(vent_total * random.uniform(0.1, 0.9))
+        vent_total = icu_total * 2 if icu_total > 0 else rng.randint(0, 2)
+        vent_av = int(vent_total * rng.uniform(0.1, 0.9))
 
-        # Randomize specialties based on Role of Care (Role 3/4 get more)
-        num_specs = random.randint(1, 2) + (role_int - 1)
+        # Randomize specialties based on Role of Care
+        num_specs = rng.randint(1, 2) + (role_int - 1)
         specialties = ["Blood Bank", "CT", "ICU"] if role_int >= 2 else []
-        specialties += random.sample(possible_specialties, min(num_specs, len(possible_specialties)))
-        specialties = sorted(list(set(specialties))) # Deduplicate and sort
+        specialties += rng.sample(possible_specialties, min(num_specs, len(possible_specialties)))
+        specialties = sorted(list(set(specialties)))
 
         props = {
-            "facility_id": str(row.get("osm_id", idx)),
+            "facility_id": str(osm_id),
             "name": name,
             "country": "EU", 
             "in_crisis_area": True,
@@ -327,19 +336,20 @@ def _load_demo_cases() -> Dict[str, Any]:
             # Extract base coordinates
             base_lat = float(r.get("Latitude"))
             base_lon = float(r.get("Longitude"))
+            case_id = int(r.get("Case_ID"))
             
-            # Apply a tiny random jitter (~50 meters) to scatter perfectly stacked coordinates
-            lat = base_lat + random.uniform(-0.0005, 0.0005)
-            lon = base_lon + random.uniform(-0.0005, 0.0005)
+            # --- NEW: Seed random with case_id so jitter survives restarts perfectly ---
+            rng = random.Random(case_id)
+            lat = base_lat + rng.uniform(-0.0005, 0.0005)
+            lon = base_lon + rng.uniform(-0.0005, 0.0005)
             
             feats.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [lon, lat]},
                 "properties": {
                     "sequence": int(r.get("Sequence")),
-                    "case_id": int(r.get("Case_ID")),
+                    "case_id": case_id,
                     "name": str(r.get("Name")),
-                    # ... (keep the rest of your property assignments exactly the same)
                     "age": int(r.get("Age")),
                     "sex": str(r.get("Sex")),
                     "status": str(r.get("Status")),
@@ -388,12 +398,12 @@ def _facility_score(case_lat, case_lon, fac_props: Dict[str, Any], distance_km: 
     beds_av = int(cap.get("beds_available") or 0)
     occ = 1.0 - (beds_av / beds_total)
     
-    # FIX 1: Increased occupancy penalty from 200 to 1000. 
+    # Increased occupancy penalty from 200 to 1000. 
     # This forces the system to balance the load among all nearby facilities 
     # instead of filling up the closest one to 100% first.
     score = distance_km + (occ * 1000.0) 
     
-    # FIX 2: Check for critical equipment during fallback routing.
+    # Check for critical equipment during fallback routing.
     # If a critical patient is pushed into the "Relaxed/Desperate" pass,
     # heavily penalize facilities that lack the needed resources.
     triage_low = (triage or "").lower()
@@ -706,6 +716,43 @@ def api_demo_reset():
         buffer_val = float(buffer_val)
     _reset_demo_facilities(buffer_val=buffer_val)
     return jsonify({"ok": True})
+
+@app.route("/api/demo/osrm_cache", methods=["GET", "POST"])
+def api_demo_osrm_cache():
+    with _osrm_cache_lock:
+        if request.method == "GET":
+            # Serve existing cache to the frontend
+            if OSRM_CACHE_FILE.exists():
+                try:
+                    with open(OSRM_CACHE_FILE, "r", encoding="utf-8") as f:
+                        return Response(f.read(), mimetype="application/json")
+                except Exception as e:
+                    print(f"Error reading OSRM cache: {e}")
+            return jsonify({})
+        
+        # POST: Save newly calculated routes from the frontend
+        new_data = request.get_json(force=True, silent=True) or {}
+        if not new_data:
+            return jsonify({"ok": False, "reason": "No data"})
+            
+        cache = {}
+        if OSRM_CACHE_FILE.exists():
+            try:
+                with open(OSRM_CACHE_FILE, "r", encoding="utf-8") as f:
+                    cache = json.load(f)
+            except Exception:
+                pass
+                
+        cache.update(new_data)
+        DEMO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(OSRM_CACHE_FILE, "w", encoding="utf-8") as f:
+                json.dump(cache, f)
+        except Exception as e:
+            print(f"Error writing OSRM cache: {e}")
+            return jsonify({"ok": False, "reason": str(e)})
+            
+        return jsonify({"ok": True})
 
 @app.route("/api/demo/route", methods=["POST"])
 def api_demo_route():
