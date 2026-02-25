@@ -444,24 +444,79 @@
     }
 
     window.showPatient = function(caseId) {
+        // Prevent the click from registering on the map and closing the popup
+        if (window.event) window.event.stopPropagation();
+        
         const patient = currentCases.find(c => c.properties.case_id === caseId);
         
+        // Find the patient's routing assignment, if one exists
+        const assignment = currentRoutes.find(r => r.case_id === caseId);
+        
         if (patient) {
-            const coords = patient.geometry.coordinates;
-            const latlng = [coords[1], coords[0]]; 
-            
             const keysToShow = [
                 "case_id", "name", "age", "sex", "branch", 
                 "nato_triage", "diagnosis", "evacuation_recommendation"
             ];
             
-            map.panTo(latlng);
-            
-            L.popup({ autoPanPadding: [50, 50] })
-              .setLatLng(latlng)
-              .setContent(popupTable(patient.properties, keysToShow))
-              .openOn(map);
+            setTimeout(() => {
+                let activePopup = map._popup;
+                if (activePopup) {
+                    if (!activePopup._previousContent) {
+                        activePopup._previousContent = activePopup.getContent();
+                    }
+
+                    // Base patient info table
+                    let patientHtml = popupTable(patient.properties, keysToShow);
+                    
+                    // Add Assignment Information
+                    let assignmentHtml = '';
+                    if (assignment) {
+                        assignmentHtml = `
+                          <div style="margin-top: 8px; padding-top: 4px; border-top: 1px solid #eee;">
+                            <span class="k" style="text-transform: uppercase; font-size: 11px; color: #666;">Evacuation Assignment</span>
+                            <div class="kv"><span class="k mono">Destination</span>: <b>${assignment.facility_name}</b></div>
+                            <div class="kv"><span class="k mono">Reason</span>: ${assignment.reason}</div>
+                            <div class="kv"><span class="k mono">Est. Dist.</span>: ${assignment.distance_km.toFixed(1)} km</div>
+                          </div>
+                        `;
+                    } else {
+                        assignmentHtml = `
+                          <div style="margin-top: 8px; padding-top: 4px; border-top: 1px solid #eee;">
+                            <span class="k" style="text-transform: uppercase; font-size: 11px; color: #666;">Evacuation Assignment</span>
+                            <div class="kv"><span style="color: #b60; font-weight: bold;">Unassigned / Pending</span></div>
+                          </div>
+                        `;
+                    }
+
+                    const newContent = `
+                      <div style="margin-bottom: 8px; border-bottom: 1px solid #eee; padding-bottom: 8px;">
+                        <button onclick="window.restorePopup(event)" style="padding: 4px 8px; font-size: 12px; cursor: pointer; border: 1px solid #ccc; background: #fff; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-weight: bold;">
+                          &larr; Back
+                        </button>
+                      </div>
+                      ${patientHtml}
+                      ${assignmentHtml}
+                    `;
+
+                    activePopup.setContent(newContent);
+                    activePopup.update();
+                }
+            }, 10);
         }
+    };
+
+    window.restorePopup = function(e) {
+        if (e) e.stopPropagation();
+        if (window.event) window.event.stopPropagation();
+        
+        setTimeout(() => {
+            let activePopup = map._popup;
+            if (activePopup && activePopup._previousContent) {
+                activePopup.setContent(activePopup._previousContent);
+                activePopup.update();
+                activePopup._previousContent = null;
+            }
+        }, 10);
     };
 
     function getEdgeCoord(centerLat, centerLon, destLat, destLon, radiusMeters) {
