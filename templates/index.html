@@ -146,7 +146,10 @@
     });
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+      maxZoom: 19, 
+      attribution: '&copy; OpenStreetMap contributors',
+      updateWhenIdle: false, // Loads tiles immediately while panning
+      keepBuffer: 10         // Keeps more tiles loaded outside the visible view
     }).addTo(map);
 
     // Using FeatureGroup instead of LayerGroup gives us bringToFront() and bringToBack() for canvas ordering
@@ -248,7 +251,10 @@
           html += `<div style="max-height: 120px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">`;
           incoming.forEach(p => {
               const tColor = triageColor(p.nato_triage);
-              html += `<div style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05);"><b style="color:${tColor}; font-size: 14px; line-height: 10px;">&bull;</b> <b>Case ${p.case_id}</b> &mdash; ${p.nato_triage}</div>`;
+              html += `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
+                         <b style="color:${tColor}; font-size: 14px; line-height: 10px;">&bull;</b> 
+                         <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}
+                       </div>`;
           });
           html += `</div></div>`;
       }
@@ -256,6 +262,32 @@
       html += '</div>';
       return html;
     }
+
+    // Function to pan to and display a patient's full details
+    window.showPatient = function(caseId) {
+        // Find the patient in the currently loaded cases
+        const patient = currentCases.find(c => c.properties.case_id === caseId);
+        
+        if (patient) {
+            const coords = patient.geometry.coordinates;
+            const latlng = [coords[1], coords[0]]; // Leaflet uses [lat, lon]
+            
+            // Specify the extended properties we want to show for the patient
+            const keysToShow = [
+                "case_id", "name", "age", "sex", "branch", 
+                "nato_triage", "diagnosis", "evacuation_recommendation"
+            ];
+            
+            // Pan the map to the patient
+            map.panTo(latlng);
+            
+            // Open a new popup with the patient's full details
+            L.popup({ autoPanPadding: [50, 50] })
+              .setLatLng(latlng)
+              .setContent(popupTable(patient.properties, keysToShow))
+              .openOn(map);
+        }
+    };
 
     async function refreshHealthsitesStatus() {
       const el = document.getElementById("hsStatus");
@@ -278,7 +310,7 @@
 
     function attachHealthsitesLayers() {
       if (healthsitesWays || healthsitesNodes) return;
-      const gridOpts = { updateWhenIdle: true, keepBuffer: 2 };
+      const gridOpts = { updateWhenIdle: false, keepBuffer: 10 };
 
       healthsitesWays = L.vectorGrid.protobuf('/tiles/ways/{z}/{x}/{y}.pbf', {
         ...gridOpts,
@@ -418,10 +450,18 @@
           const c = triageColor(f.properties.nato_triage);
           const dynamicSize = Math.max(12, 24 * Math.pow(1.2, currentZoom - 7));
           
+          // --- MODIFIED CODE START ---
+          const patientKeys = [
+              "case_id", "name", "age", "sex", "branch", 
+              "nato_triage", "diagnosis", "evacuation_recommendation"
+          ];
+          
           L.marker([f.geometry.coordinates[1], f.geometry.coordinates[0]], {
             icon: getManIcon(c, dynamicSize)
-          }).bindPopup(popupTable(f.properties, ["case_id","nato_triage","diagnosis"]))
+          }).bindPopup(popupTable(f.properties, patientKeys))
             .addTo(demoCasesLayer);
+          // --- MODIFIED CODE END ---
+          
           count++;
         }
       });

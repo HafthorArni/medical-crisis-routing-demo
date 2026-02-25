@@ -324,8 +324,14 @@ def _load_demo_cases() -> Dict[str, Any]:
         df = pd.read_excel(DEMO_CASES_XLSX, sheet_name=0)
         feats = []
         for _, r in df.iterrows():
-            lat = float(r.get("Latitude"))
-            lon = float(r.get("Longitude"))
+            # Extract base coordinates
+            base_lat = float(r.get("Latitude"))
+            base_lon = float(r.get("Longitude"))
+            
+            # Apply a tiny random jitter (~50 meters) to scatter perfectly stacked coordinates
+            lat = base_lat + random.uniform(-0.0005, 0.0005)
+            lon = base_lon + random.uniform(-0.0005, 0.0005)
+            
             feats.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [lon, lat]},
@@ -333,6 +339,7 @@ def _load_demo_cases() -> Dict[str, Any]:
                     "sequence": int(r.get("Sequence")),
                     "case_id": int(r.get("Case_ID")),
                     "name": str(r.get("Name")),
+                    # ... (keep the rest of your property assignments exactly the same)
                     "age": int(r.get("Age")),
                     "sex": str(r.get("Sex")),
                     "status": str(r.get("Status")),
@@ -346,7 +353,6 @@ def _load_demo_cases() -> Dict[str, Any]:
             })
         _demo_cases = {"type": "FeatureCollection", "features": feats}
         return _demo_cases
-
 
 # =========================
 # ROUTING / DECISION SUPPORT (DEMO)
@@ -704,13 +710,15 @@ def api_demo_reset():
 @app.route("/api/demo/route", methods=["POST"])
 def api_demo_route():
     body = request.get_json(force=True, silent=True) or {}
-    triage_filters = body.get("triage_filters")  # e.g. ["Immediate (Red)", "Delayed (Yellow)"]
+    triage_filters = body.get("triage_filters")  
     max_distance_km = float(body.get("max_distance_km", 350))
     allow_outside_area = True
     max_routes_draw = int(body.get("max_routes_draw", 120))
     buffer_val = body.get("buffer")
     if buffer_val is not None:
         buffer_val = float(buffer_val)
+
+    _reset_demo_facilities(buffer_val=buffer_val)
 
     cases_fc = _load_demo_cases()
     facilities_fc = _load_demo_facilities(buffer_val=buffer_val)
