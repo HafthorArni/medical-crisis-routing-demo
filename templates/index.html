@@ -527,10 +527,23 @@
       clusters.forEach(c => {
         // Only draw a hotspot if there are multiple casualties clustered together
         if (c.count > 4) {
-            // Base radius of 20 kilometers + 4 kilometers per casualty
             const radiusMeters = 2000 + (c.count * 800); 
 
-            // FIX: Pass radius into the L.circle options so it actually sizes the circle
+            // Create the HTML for the popup
+            const popupHTML = `
+              <div style="font:13px/1.25 system-ui,sans-serif; text-align: center; min-width: 140px;">
+                <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
+                  <b style="color: #d33; font-size: 14px; text-transform: uppercase;">Crisis Hotspot</b>
+                </div>
+                <div style="margin: 8px 0; font-size: 28px; font-weight: 800; color: #111;">
+                  ${c.count}
+                </div>
+                <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600;">
+                  Active Casualties in Area
+                </div>
+              </div>
+            `;
+
             L.circle([c.lat, c.lon], {
                 radius: radiusMeters,
                 color: '#d33',
@@ -538,14 +551,16 @@
                 fillOpacity: 0.20,
                 weight: 2,
                 dashArray: '6, 6',
-                interactive: false // Allows clicking through to markers below
-            }).addTo(demoHotspotsLayer);
+                interactive: true // CHANGED: Now true so it catches clicks
+            })
+            .bindPopup(popupHTML) // ADDED: Attach the popup
+            .addTo(demoHotspotsLayer);
         }
       });
 
       enforceZOrder();
     }
-    
+
     function renderRoutes() {
       demoRoutesLayer.clearLayers();
       if (!document.getElementById("showRoutes").checked) {
