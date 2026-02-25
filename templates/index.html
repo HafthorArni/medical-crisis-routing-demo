@@ -320,54 +320,76 @@
         const showGreen = document.getElementById("triGreen").checked;
         const CLUSTER_THRESHOLD_METERS = 2000;
 
+        // Pass 1: Group ALL cases into geographical clusters, regardless of visibility
         currentCases.forEach(f => {
             const triage = (f.properties.nato_triage || "").toLowerCase();
-            let isVisible = false;
-            let severity = 1; 
+            let isRed = false, isYellow = false, isGreen = false;
             
-            if (triage.includes("red") || triage.includes("immediate")) {
-                if (showRed) isVisible = true;
-                severity = 3;
-            } else if (triage.includes("yellow") || triage.includes("delayed")) {
-                if (showYellow) isVisible = true;
-                severity = 2;
-            } else if (triage.includes("green") || triage.includes("minimal")) {
-                if (showGreen) isVisible = true;
-                severity = 1;
+            if (triage.includes("red") || triage.includes("immediate")) isRed = true;
+            else if (triage.includes("yellow") || triage.includes("delayed")) isYellow = true;
+            else if (triage.includes("green") || triage.includes("minimal")) isGreen = true;
+
+            const lat = f.geometry.coordinates[1];
+            const lon = f.geometry.coordinates[0];
+            let foundCluster = null;
+            let minD = Infinity;
+
+            for (const c of activeClusters) {
+                const d = map.distance([lat, lon], [c.lat, c.lon]);
+                if (d < CLUSTER_THRESHOLD_METERS && d < minD) {
+                    minD = d;
+                    foundCluster = c;
+                }
             }
 
-            if (isVisible) {
-                const lat = f.geometry.coordinates[1];
-                const lon = f.geometry.coordinates[0];
-                let foundCluster = null;
-                let minD = Infinity;
-
-                for (const c of activeClusters) {
-                    const d = map.distance([lat, lon], [c.lat, c.lon]);
-                    if (d < CLUSTER_THRESHOLD_METERS && d < minD) {
-                        minD = d;
-                        foundCluster = c;
-                    }
-                }
-
-                if (foundCluster) {
-                    foundCluster.lat = ((foundCluster.lat * foundCluster.count) + lat) / (foundCluster.count + 1);
-                    foundCluster.lon = ((foundCluster.lon * foundCluster.count) + lon) / (foundCluster.count + 1);
-                    foundCluster.count++;
-                    foundCluster.severity = Math.max(foundCluster.severity, severity);
-                    foundCluster.cases.push(f.properties.case_id);
-                } else {
-                    activeClusters.push({ 
-                        lat: lat, lon: lon, count: 1, severity: severity, cases: [f.properties.case_id] 
-                    });
-                }
+            if (foundCluster) {
+                // Update centroid and totals based on all cases
+                foundCluster.lat = ((foundCluster.lat * foundCluster.totalCount) + lat) / (foundCluster.totalCount + 1);
+                foundCluster.lon = ((foundCluster.lon * foundCluster.totalCount) + lon) / (foundCluster.totalCount + 1);
+                foundCluster.totalCount++;
+                foundCluster.cases.push(f.properties.case_id);
+                
+                if (isRed) foundCluster.redCount++;
+                if (isYellow) foundCluster.yellowCount++;
+                if (isGreen) foundCluster.greenCount++;
+            } else {
+                activeClusters.push({ 
+                    lat: lat, lon: lon, totalCount: 1, cases: [f.properties.case_id],
+                    redCount: isRed ? 1 : 0,
+                    yellowCount: isYellow ? 1 : 0,
+                    greenCount: isGreen ? 1 : 0
+                });
             }
         });
 
-        // Filter out tiny groups and set colors/radiuses
-        activeClusters = activeClusters.filter(c => c.count > 4);
+        // Pass 2: Filter and determine display properties based on toggles
+        activeClusters = activeClusters.filter(c => {
+            c.visibleCount = 0;
+            c.severity = 1;
+            
+            if (showRed && c.redCount > 0) { 
+                c.visibleCount += c.redCount; 
+                c.severity = 3; 
+            }
+            if (showYellow && c.yellowCount > 0) { 
+                c.visibleCount += c.yellowCount; 
+                if (c.severity < 3) c.severity = 2; 
+            }
+            if (showGreen && c.greenCount > 0) { 
+                c.visibleCount += c.greenCount; 
+            }
+            
+            // Keep clusters that have > 4 cases total AND at least 1 currently visible case
+            return c.totalCount > 4 && c.visibleCount > 0;
+        });
+
+        // Pass 3: Set styling
         activeClusters.forEach(c => {
-            c.radiusMeters = 2000 + (c.count * 800);
+            c.count = c.visibleCount; // The main big number shows what is currently filtered
+            
+            // SHAPE SIZING FIX: Base the visual circle size on the VISIBLE cases, not total cases
+            c.radiusMeters = 2000 + (c.visibleCount * 800); 
+            
             if (c.severity === 3) c.color = "#d33";
             else if (c.severity === 2) c.color = "#d9a300";
             else c.color = "#2a7";
@@ -562,7 +584,6 @@
 
     function renderHotspots() {
       demoHotspotsLayer.clearLayers();
-      // Ensure clusters display if cluster mode is on, even if the hotspots toggle is off
       if (!document.getElementById("showHotspots").checked && !document.getElementById("clusterMode").checked) {
           enforceZOrder();
           return;
@@ -570,15 +591,24 @@
 
       activeClusters.forEach(c => {
         const popupHTML = `
-          <div style="font:13px/1.25 system-ui,sans-serif; text-align: center; min-width: 140px;">
+          <div style="font:13px/1.25 system-ui,sans-serif; text-align: center; min-width: 170px;">
             <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
               <b style="color: ${c.color}; font-size: 14px; text-transform: uppercase;">Crisis Cluster</b>
             </div>
-            <div style="margin: 8px 0; font-size: 28px; font-weight: 800; color: #111;">
+            <div style="margin: 8px 0; font-size: 28px; font-weight: 800; color: #111; line-height: 1;">
               ${c.count}
             </div>
-            <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600;">
-              Active Casualties in Area
+            <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600; margin-bottom: 12px;">
+              Filtered Casualties
+            </div>
+            
+            <div style="text-align: left; font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 4px;">
+              Total in Area:
+            </div>
+            <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 12px; border-top: 1px solid #eee; padding-top: 6px;">
+              <span style="color: #d33;" title="Immediate (Red)">T1: ${c.redCount || 0}</span>
+              <span style="color: #d9a300;" title="Delayed (Yellow)">T2: ${c.yellowCount || 0}</span>
+              <span style="color: #2a7;" title="Minimal (Green)">T3: ${c.greenCount || 0}</span>
             </div>
           </div>
         `;
