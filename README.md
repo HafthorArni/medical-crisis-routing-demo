@@ -1,4 +1,4 @@
-create a new folder called "map_data" and add the map data there.
+create a new folder called "map_data" and add the map data there, download from here(https://healthsites.io/map?country=Europe).
 
 create new venv:
 ```bash
