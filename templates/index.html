@@ -114,6 +114,7 @@
         <button id="btnRoute">Run MASCAL Routing</button>
         <span class="pill"><input id="showRoutes" type="checkbox" checked /> <label for="showRoutes">Show routes</label></span>
         <span class="pill"><input id="showHotspots" type="checkbox" checked /> <label for="showHotspots">Hotspots</label></span>
+        <span class="pill"><input id="clusterMode" type="checkbox" /> <label for="clusterMode">Cluster Mode</label></span>
         <span class="pill"><input id="hideUnused" type="checkbox" /> <label for="hideUnused">Hide unused</label></span>
       </div>
 
@@ -169,6 +170,7 @@
     let casualtyBounds = null; 
     let assignedFacilityIds = new Set(); 
     let assignedPatientsByFacility = {}; 
+    let activeClusters = [];
 
     // Helper function to strictly enforce the Z-Order on the Canvas
     function enforceZOrder() {
@@ -268,29 +270,109 @@
 
     // Function to pan to and display a patient's full details
     window.showPatient = function(caseId) {
-        // Find the patient in the currently loaded cases
         const patient = currentCases.find(c => c.properties.case_id === caseId);
         
         if (patient) {
             const coords = patient.geometry.coordinates;
-            const latlng = [coords[1], coords[0]]; // Leaflet uses [lat, lon]
+            const latlng = [coords[1], coords[0]]; 
             
-            // Specify the extended properties we want to show for the patient
             const keysToShow = [
                 "case_id", "name", "age", "sex", "branch", 
                 "nato_triage", "diagnosis", "evacuation_recommendation"
             ];
             
-            // Pan the map to the patient
             map.panTo(latlng);
             
-            // Open a new popup with the patient's full details
             L.popup({ autoPanPadding: [50, 50] })
               .setLatLng(latlng)
               .setContent(popupTable(patient.properties, keysToShow))
               .openOn(map);
         }
     };
+
+    // Math helper to connect route lines to the visual edge of the cluster
+    function getEdgeCoord(centerLat, centerLon, destLat, destLon, radiusMeters) {
+        const R = 6378137; 
+        const dLat = (destLat - centerLat) * Math.PI / 180;
+        const dLon = (destLon - centerLon) * Math.PI / 180;
+        const lat1 = centerLat * Math.PI / 180;
+        const lat2 = destLat * Math.PI / 180;
+
+        const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(lat1) * Math.cos(lat2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        const distance = R * c;
+
+        if (distance === 0 || distance <= radiusMeters) return [centerLat, centerLon];
+
+        const ratio = radiusMeters / distance;
+        return [
+            centerLat + (destLat - centerLat) * ratio,
+            centerLon + (destLon - centerLon) * ratio
+        ];
+    }
+
+    // Build clusters independently so cases and routes can share the same data
+    function buildClusters() {
+        activeClusters = [];
+        const showRed = document.getElementById("triRed").checked;
+        const showYellow = document.getElementById("triYellow").checked;
+        const showGreen = document.getElementById("triGreen").checked;
+        const CLUSTER_THRESHOLD_METERS = 2000;
+
+        currentCases.forEach(f => {
+            const triage = (f.properties.nato_triage || "").toLowerCase();
+            let isVisible = false;
+            let severity = 1; 
+            
+            if (triage.includes("red") || triage.includes("immediate")) {
+                if (showRed) isVisible = true;
+                severity = 3;
+            } else if (triage.includes("yellow") || triage.includes("delayed")) {
+                if (showYellow) isVisible = true;
+                severity = 2;
+            } else if (triage.includes("green") || triage.includes("minimal")) {
+                if (showGreen) isVisible = true;
+                severity = 1;
+            }
+
+            if (isVisible) {
+                const lat = f.geometry.coordinates[1];
+                const lon = f.geometry.coordinates[0];
+                let foundCluster = null;
+                let minD = Infinity;
+
+                for (const c of activeClusters) {
+                    const d = map.distance([lat, lon], [c.lat, c.lon]);
+                    if (d < CLUSTER_THRESHOLD_METERS && d < minD) {
+                        minD = d;
+                        foundCluster = c;
+                    }
+                }
+
+                if (foundCluster) {
+                    foundCluster.lat = ((foundCluster.lat * foundCluster.count) + lat) / (foundCluster.count + 1);
+                    foundCluster.lon = ((foundCluster.lon * foundCluster.count) + lon) / (foundCluster.count + 1);
+                    foundCluster.count++;
+                    foundCluster.severity = Math.max(foundCluster.severity, severity);
+                    foundCluster.cases.push(f.properties.case_id);
+                } else {
+                    activeClusters.push({ 
+                        lat: lat, lon: lon, count: 1, severity: severity, cases: [f.properties.case_id] 
+                    });
+                }
+            }
+        });
+
+        // Filter out tiny groups and set colors/radiuses
+        activeClusters = activeClusters.filter(c => c.count > 4);
+        activeClusters.forEach(c => {
+            c.radiusMeters = 2000 + (c.count * 800);
+            if (c.severity === 3) c.color = "#d33";
+            else if (c.severity === 2) c.color = "#d9a300";
+            else c.color = "#2a7";
+        });
+    }
 
     async function refreshHealthsitesStatus() {
       const el = document.getElementById("hsStatus");
@@ -380,6 +462,8 @@
             const facFc = await facRes.json();
             allFacilitiesFeatures = facFc.features || [];
 
+            buildClusters();
+            
             renderCases();
             renderHotspots();
             updateMapDisplay(); 
@@ -416,13 +500,10 @@
                 const c = facilityColor(cap.beds_available, cap.beds_total);
                 const rad = facilityRadius(p.role_of_care, currentZoom);
 
-                // VISUAL MARKER (unclickable to prevent blocking hit area)
                 const mVisual = L.circleMarker([lat, lon], {
                     radius: rad, color: "#111", weight: 1, fillColor: c, fillOpacity: 0.9, interactive: false
                 });
 
-                // INVISIBLE HIT-AREA MARKER (expanded radius, using 1% opacity black to guarantee Canvas hit detection)
-                // INVISIBLE HIT-AREA MARKER (expanded radius, fully transparent)
                 const mHit = L.circleMarker([lat, lon], {
                     radius: Math.max(20, rad + 12), color: "transparent", weight: 0, fillColor: "transparent", fillOpacity: 0, interactive: true
                 }).bindPopup(popupTable(p, ["facility_id","name","role_of_care","specialties","capacity"], facId));
@@ -438,6 +519,13 @@
 
     function renderCases() {
       demoCasesLayer.clearLayers();
+      
+      // In Cluster Mode, individual casualty markers are hidden completely
+      if (document.getElementById("clusterMode").checked) {
+          enforceZOrder();
+          return; 
+      }
+
       const currentZoom = map.getZoom();
       const showRed = document.getElementById("triRed").checked;
       const showYellow = document.getElementById("triYellow").checked;
@@ -455,7 +543,6 @@
           const c = triageColor(f.properties.nato_triage);
           const dynamicSize = Math.max(12, 24 * Math.pow(1.2, currentZoom - 7));
           
-          // --- MODIFIED CODE START ---
           const patientKeys = [
               "case_id", "name", "age", "sex", "branch", 
               "nato_triage", "diagnosis", "evacuation_recommendation"
@@ -465,7 +552,6 @@
             icon: getManIcon(c, dynamicSize)
           }).bindPopup(popupTable(f.properties, patientKeys))
             .addTo(demoCasesLayer);
-          // --- MODIFIED CODE END ---
           
           count++;
         }
@@ -476,86 +562,38 @@
 
     function renderHotspots() {
       demoHotspotsLayer.clearLayers();
-      if (!document.getElementById("showHotspots").checked) {
+      // Ensure clusters display if cluster mode is on, even if the hotspots toggle is off
+      if (!document.getElementById("showHotspots").checked && !document.getElementById("clusterMode").checked) {
           enforceZOrder();
           return;
       }
 
-      const showRed = document.getElementById("triRed").checked;
-      const showYellow = document.getElementById("triYellow").checked;
-      const showGreen = document.getElementById("triGreen").checked;
+      activeClusters.forEach(c => {
+        const popupHTML = `
+          <div style="font:13px/1.25 system-ui,sans-serif; text-align: center; min-width: 140px;">
+            <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
+              <b style="color: ${c.color}; font-size: 14px; text-transform: uppercase;">Crisis Cluster</b>
+            </div>
+            <div style="margin: 8px 0; font-size: 28px; font-weight: 800; color: #111;">
+              ${c.count}
+            </div>
+            <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600;">
+              Active Casualties in Area
+            </div>
+          </div>
+        `;
 
-      const clusters = [];
-      const CLUSTER_THRESHOLD_METERS = 2000; // 2 km radius to group casualties into the same hotspot
-
-      // Group cases by actual geographic proximity rather than sequence ID
-      currentCases.forEach(f => {
-        const triage = (f.properties.nato_triage || "").toLowerCase();
-        let isVisible = false;
-        if (showRed && (triage.includes("red") || triage.includes("immediate"))) isVisible = true;
-        if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) isVisible = true;
-        if (showGreen && (triage.includes("green") || triage.includes("minimal"))) isVisible = true;
-
-        if (isVisible) {
-          const lat = f.geometry.coordinates[1];
-          const lon = f.geometry.coordinates[0];
-          let foundCluster = null;
-          let minD = Infinity;
-
-          // Find the closest existing cluster within our threshold
-          for (const c of clusters) {
-              const d = map.distance([lat, lon], [c.lat, c.lon]);
-              if (d < CLUSTER_THRESHOLD_METERS && d < minD) {
-                  minD = d;
-                  foundCluster = c;
-              }
-          }
-
-          if (foundCluster) {
-              // Pull the center of the hotspot towards the density of casualties
-              foundCluster.lat = ((foundCluster.lat * foundCluster.count) + lat) / (foundCluster.count + 1);
-              foundCluster.lon = ((foundCluster.lon * foundCluster.count) + lon) / (foundCluster.count + 1);
-              foundCluster.count++;
-          } else {
-              // Start a new hotspot cluster
-              clusters.push({ lat: lat, lon: lon, count: 1 });
-          }
-        }
-      });
-
-      // Draw the massive hotspots
-      clusters.forEach(c => {
-        // Only draw a hotspot if there are multiple casualties clustered together
-        if (c.count > 4) {
-            const radiusMeters = 2000 + (c.count * 800); 
-
-            // Create the HTML for the popup
-            const popupHTML = `
-              <div style="font:13px/1.25 system-ui,sans-serif; text-align: center; min-width: 140px;">
-                <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
-                  <b style="color: #d33; font-size: 14px; text-transform: uppercase;">Crisis Hotspot</b>
-                </div>
-                <div style="margin: 8px 0; font-size: 28px; font-weight: 800; color: #111;">
-                  ${c.count}
-                </div>
-                <div style="color: #666; font-size: 11px; text-transform: uppercase; font-weight: 600;">
-                  Active Casualties in Area
-                </div>
-              </div>
-            `;
-
-            L.circle([c.lat, c.lon], {
-                radius: radiusMeters,
-                color: '#d33',
-                fillColor: '#d33',
-                fillOpacity: 0.20,
-                weight: 2,
-                dashArray: '6, 6',
-                interactive: true // CHANGED: Now true so it catches clicks
-            })
-            .bindPopup(popupHTML) // ADDED: Attach the popup
-            .addTo(demoHotspotsLayer);
-        }
+        L.circle([c.lat, c.lon], {
+            radius: c.radiusMeters,
+            color: c.color,
+            fillColor: c.color,
+            fillOpacity: 0.20,
+            weight: 2,
+            dashArray: '6, 6',
+            interactive: true 
+        })
+        .bindPopup(popupHTML) 
+        .addTo(demoHotspotsLayer);
       });
 
       enforceZOrder();
@@ -570,50 +608,97 @@
 
       const currentZoom = map.getZoom();
       const dynamicWeight = Math.max(0.5, 2 * Math.pow(1.1, currentZoom - 7));
+      const clusterMode = document.getElementById("clusterMode").checked;
 
       const showRed = document.getElementById("triRed").checked;
       const showYellow = document.getElementById("triYellow").checked;
       const showGreen = document.getElementById("triGreen").checked;
 
-      currentRoutes.forEach(a => {
-        const triage = (a.nato_triage || "").toLowerCase();
-        let isVisible = false;
-        if (showRed && (triage.includes("red") || triage.includes("immediate"))) isVisible = true;
-        if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) isVisible = true;
-        if (showGreen && (triage.includes("green") || triage.includes("minimal"))) isVisible = true;
-
-        if (isVisible) {
-          const col = triageColor(a.nato_triage);
+      if (clusterMode) {
+          let clusterRoutes = {};
           
-          // Construct the popup content for the route
-          const routePopupHTML = `
-            <div style="font:13px/1.25 system-ui,sans-serif; min-width: 220px;">
-              <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
-                <b style="font-size: 14px;">Evacuation Route</b>
-              </div>
-              <div class="kv"><span class="k mono">Patient:</span> Case ${a.case_id}</div>
-              <div class="kv"><span class="k mono">Triage:</span> <span style="color:${col}; font-weight:bold;">${a.nato_triage}</span></div>
-              <div class="kv"><span class="k mono">Destination:</span> ${a.facility_name}</div>
-              <div class="kv"><span class="k mono">Distance:</span> ${a.distance_km.toFixed(1)} km</div>
-              <div class="kv"><span class="k mono">Reasoning:</span> ${a.reason}</div>
-            </div>
-          `;
+          // Aggregate individual patient routes into cluster-to-facility routes
+          currentRoutes.forEach(a => {
+              const triage = (a.nato_triage || "").toLowerCase();
+              let isVisible = false;
+              if (showRed && (triage.includes("red") || triage.includes("immediate"))) isVisible = true;
+              if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) isVisible = true;
+              if (showGreen && (triage.includes("green") || triage.includes("minimal"))) isVisible = true;
+              
+              if (!isVisible) return;
+              
+              let myClusterIndex = activeClusters.findIndex(c => c.cases.includes(a.case_id));
+              
+              if (myClusterIndex !== -1) {
+                  const key = myClusterIndex + "_" + a.facility_id;
+                  if (!clusterRoutes[key]) {
+                      clusterRoutes[key] = {
+                          cluster: activeClusters[myClusterIndex],
+                          facility_id: a.facility_id,
+                          facility_name: a.facility_name,
+                          facility_coord: a.facility_coord,
+                          patients: [],
+                          severity: 1
+                      };
+                  }
+                  clusterRoutes[key].patients.push(a);
+                  let sev = triage.includes("red") ? 3 : (triage.includes("yellow") ? 2 : 1);
+                  clusterRoutes[key].severity = Math.max(clusterRoutes[key].severity, sev);
+              }
+          });
+          
+          Object.values(clusterRoutes).forEach(cr => {
+              const col = cr.severity === 3 ? "#d33" : (cr.severity === 2 ? "#d9a300" : "#2a7");
+              const edgeCoord = getEdgeCoord(
+                  cr.cluster.lat, cr.cluster.lon, 
+                  cr.facility_coord[1], cr.facility_coord[0], 
+                  cr.cluster.radiusMeters
+              );
+              
+              const routeCoords = [edgeCoord, [cr.facility_coord[1], cr.facility_coord[0]]];
+              const routePopupHTML = `
+                <div style="font:13px/1.25 system-ui,sans-serif; min-width: 220px;">
+                  <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
+                    <b style="font-size: 14px;">Cluster Evacuation Route</b>
+                  </div>
+                  <div class="kv"><span class="k mono">Patients:</span> ${cr.patients.length} total</div>
+                  <div class="kv"><span class="k mono">Destination:</span> ${cr.facility_name}</div>
+                </div>
+              `;
 
-          const routeCoords = [[a.case_coord[1], a.case_coord[0]], [a.facility_coord[1], a.facility_coord[0]]];
+              L.polyline(routeCoords, { weight: dynamicWeight * 2, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).bindPopup(routePopupHTML).addTo(demoRoutesLayer);
+          });
+          
+      } else {
+          currentRoutes.forEach(a => {
+            const triage = (a.nato_triage || "").toLowerCase();
+            let isVisible = false;
+            if (showRed && (triage.includes("red") || triage.includes("immediate"))) isVisible = true;
+            if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) isVisible = true;
+            if (showGreen && (triage.includes("green") || triage.includes("minimal"))) isVisible = true;
 
-          // 1. VISUAL ROUTE (thin, visible, unclickable)
-          L.polyline(routeCoords, { 
-            weight: dynamicWeight, opacity: 0.8, color: col, interactive: false
-          }).addTo(demoRoutesLayer);
+            if (isVisible) {
+              const col = triageColor(a.nato_triage);
+              const routePopupHTML = `
+                <div style="font:13px/1.25 system-ui,sans-serif; min-width: 220px;">
+                  <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
+                    <b style="font-size: 14px;">Evacuation Route</b>
+                  </div>
+                  <div class="kv"><span class="k mono">Patient:</span> Case ${a.case_id}</div>
+                  <div class="kv"><span class="k mono">Triage:</span> <span style="color:${col}; font-weight:bold;">${a.nato_triage}</span></div>
+                  <div class="kv"><span class="k mono">Destination:</span> ${a.facility_name}</div>
+                  <div class="kv"><span class="k mono">Distance:</span> ${a.distance_km.toFixed(1)} km</div>
+                  <div class="kv"><span class="k mono">Reasoning:</span> ${a.reason}</div>
+                </div>
+              `;
 
-          // 2. INVISIBLE HIT-AREA ROUTE (thick, nearly transparent, clickable)
-          L.polyline(routeCoords, { 
-            weight: 20, opacity: 0.01, color: "#000", interactive: true 
-          })
-          .bindPopup(routePopupHTML)
-          .addTo(demoRoutesLayer);
-        }
-      });
+              const routeCoords = [[a.case_coord[1], a.case_coord[0]], [a.facility_coord[1], a.facility_coord[0]]];
+              L.polyline(routeCoords, { weight: dynamicWeight, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).bindPopup(routePopupHTML).addTo(demoRoutesLayer);
+            }
+          });
+      }
       enforceZOrder();
     }
 
@@ -686,16 +771,24 @@
     document.getElementById("showRoutes").addEventListener("change", renderRoutes);
     document.getElementById("showHotspots").addEventListener("change", renderHotspots);
     
+    // Cluster Mode specific toggle
+    document.getElementById("clusterMode").addEventListener("change", () => {
+        renderCases();
+        renderRoutes();
+        renderHotspots();
+    });
+    
     // 1. Direct checkbox clicks (Toggle specific color only)
-    document.getElementById("triRed").addEventListener("change", () => { renderCases(); renderRoutes(); renderHotspots(); });
-    document.getElementById("triYellow").addEventListener("change", () => { renderCases(); renderRoutes(); renderHotspots(); });
-    document.getElementById("triGreen").addEventListener("change", () => { renderCases(); renderRoutes(); renderHotspots(); });
+    document.getElementById("triRed").addEventListener("change", () => { buildClusters(); renderCases(); renderRoutes(); renderHotspots(); });
+    document.getElementById("triYellow").addEventListener("change", () => { buildClusters(); renderCases(); renderRoutes(); renderHotspots(); });
+    document.getElementById("triGreen").addEventListener("change", () => { buildClusters(); renderCases(); renderRoutes(); renderHotspots(); });
 
     // 2. Text/Label clicks (Isolate the clicked color)
     document.getElementById("lblRed").addEventListener("click", () => {
       document.getElementById("triRed").checked = true;
       document.getElementById("triYellow").checked = false;
       document.getElementById("triGreen").checked = false;
+      buildClusters();
       renderCases(); 
       renderRoutes();
       renderHotspots();
@@ -705,6 +798,7 @@
       document.getElementById("triRed").checked = false;
       document.getElementById("triYellow").checked = true;
       document.getElementById("triGreen").checked = false;
+      buildClusters();
       renderCases(); 
       renderRoutes();
       renderHotspots();
@@ -714,6 +808,7 @@
       document.getElementById("triRed").checked = false;
       document.getElementById("triYellow").checked = false;
       document.getElementById("triGreen").checked = true;
+      buildClusters();
       renderCases(); 
       renderRoutes();
       renderHotspots();
