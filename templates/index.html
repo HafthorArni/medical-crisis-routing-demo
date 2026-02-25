@@ -11,67 +11,122 @@
   <script src="https://unpkg.com/leaflet-polylinedecorator/dist/leaflet.polylineDecorator.js"></script>
 
   <style>
-    html, body { height: 100%; margin: 0; }
+    html, body { height: 100%; margin: 0; background: #f0f2f5; }
     #map { height: 100%; width: 100%; }
 
     /* Sidebar */
     .sidebar {
       position: absolute;
-      top: 10px; left: 10px;
+      top: 15px; left: 15px;
       z-index: 1000;
-      width: 360px;
-      max-width: calc(100vw - 20px);
-      background: rgba(255,255,255,0.97);
+      width: 370px;
+      max-width: calc(100vw - 30px);
+      background: rgba(255,255,255,0.98);
       border-radius: 12px;
-      box-shadow: 0 10px 26px rgba(0,0,0,0.18);
-      font: 14px/1.25 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15), 0 1px 3px rgba(0,0,0,0.05);
+      font: 14px/1.3 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
       overflow: hidden;
+      backdrop-filter: blur(8px);
     }
-    .sidebar header{
-      padding: 10px 12px;
+    .sidebar header {
+      padding: 14px 16px;
       border-bottom: 1px solid rgba(0,0,0,0.08);
+      background: linear-gradient(to bottom, #ffffff, #f8fafc);
       display:flex;
       gap:10px;
       align-items:baseline;
       justify-content:space-between;
     }
-    .sidebar header b { font-size: 15px; }
-    .sidebar header small { opacity: 0.75; }
-    .sidebar .content { padding: 10px 12px; }
+    .sidebar header b { font-size: 15px; color: #1e293b; }
+    .sidebar header small { opacity: 0.75; color: #475569; display: block; margin-top: 2px;}
+    .sidebar .content { padding: 14px 16px; }
     .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-    .row + .row { margin-top: 10px; }
+    .row + .row { margin-top: 12px; }
+    
+    /* Enhanced Button Styles */
     button {
       appearance: none;
       border: 1px solid rgba(0,0,0,0.15);
       background: #fff;
-      border-radius: 10px;
-      padding: 8px 10px;
+      border-radius: 8px;
+      padding: 8px 12px;
       cursor: pointer;
-      box-shadow: 0 3px 10px rgba(0,0,0,0.08);
-      font-weight: 650;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+      font-weight: 600;
+      color: #334155;
+      transition: all 0.2s ease;
+    }
+    button:hover:not(:disabled) {
+      background: #f8fafc;
+      border-color: rgba(0,0,0,0.25);
     }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
+    
+    .btn-primary {
+      background: #0078D7;
+      color: #fff;
+      border: none;
+      box-shadow: 0 3px 8px rgba(0, 120, 215, 0.3);
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #005a9e;
+      color: #fff;
+    }
+
+    /* Styled Pills */
     .pill {
       border: 1px solid rgba(0,0,0,0.14);
       border-radius: 999px;
-      padding: 4px 8px;
-      background: rgba(0,0,0,0.03);
-      font-size: 12px;
+      padding: 5px 10px;
+      background: #f1f5f9;
+      font-size: 12.5px;
+      color: #475569;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.2s ease;
     }
+    .pill:hover { background: #e2e8f0; }
+    
+    /* Color-Coded Triage Filters */
+    .pill-red { background: #fee2e2; border-color: #fca5a5; color: #991b1b; }
+    .pill-red:hover { background: #fecaca; }
+    .pill-red input[type="checkbox"] { accent-color: #dc2626; }
+
+    .pill-yellow { background: #fef3c7; border-color: #fcd34d; color: #92400e; }
+    .pill-yellow:hover { background: #fde68a; }
+    .pill-yellow input[type="checkbox"] { accent-color: #d97706; }
+
+    .pill-green { background: #dcfce7; border-color: #86efac; color: #166534; }
+    .pill-green:hover { background: #bbf7d0; }
+    .pill-green input[type="checkbox"] { accent-color: #16a34a; }
+
+    .pill input[type="checkbox"] { margin: 0; cursor: pointer; }
+
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-    .hr { height:1px; background: rgba(0,0,0,0.08); margin: 10px 0; }
+    .hr { height:1px; background: rgba(0,0,0,0.08); margin: 14px 0; }
 
-    .kv { margin: 2px 0; }
-    .k { font-weight: 700; }
-    input[type="number"]{ width: 90px; padding: 6px 8px; border-radius: 10px; border: 1px solid rgba(0,0,0,0.15); }
-    label { cursor: pointer; }
+    /* Summary Card */
+    #summary {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    #summary .kv { display: flex; justify-content: space-between; margin-bottom: 6px; align-items: center; }
+    #summary .kv:last-child { margin-bottom: 0; border-top: 1px solid #e2e8f0; padding-top: 6px; margin-top: 6px; }
+    .k { font-weight: 600; color: #475569; }
+    #summary span:not(.k) { font-weight: 700; color: #0f172a; }
 
-    .status-ok { color: #0a7; font-weight: 700;}
-    .status-warn { color: #b60; font-weight: 700;}
+    label { cursor: pointer; user-select: none; }
+
+    .status-ok { color: #059669; font-weight: 700; background: #d1fae5; border-color: #6ee7b7;}
+    .status-warn { color: #d97706; font-weight: 700; background: #fef3c7; border-color: #fcd34d;}
 
     /* Slider specific styling */
     .slider-row { width: 100%; display: flex; flex-direction: column; gap: 4px; }
-    #searchBuffer { width: 100%; cursor: pointer; }
+    .slider-row .pill { width: 100%; box-sizing: border-box; display: flex; flex-direction: row; justify-content: space-between; align-items: center;}
+    #searchBuffer { flex-grow: 1; margin-left: 10px; cursor: pointer; accent-color: #0078D7; }
 
     /* Icon Styling */
     .custom-man-icon { background: none; border: none; }
@@ -89,30 +144,26 @@
     </header>
 
     <div class="content">
-      <div class="row">
-        <button id="btnReset" title="Reset facility availability to baseline">Reset Environment</button>
-      </div>
 
       <div class="row">
-        <span class="pill"><input id="triRed" type="checkbox" checked /> <label id="lblRed" style="cursor:pointer; user-select:none;">Immediate (Red)</label></span>
-        <span class="pill"><input id="triYellow" type="checkbox" checked /> <label id="lblYellow" style="cursor:pointer; user-select:none;">Delayed (Yellow)</label></span>
-        <span class="pill"><input id="triGreen" type="checkbox" checked /> <label id="lblGreen" style="cursor:pointer; user-select:none;">Minimal (Green)</label></span>
-      </div>
-
-      <div class="row">
-        <label class="pill">Max Travel Distance [km] <input id="maxKm" type="number" value="350" min="10" max="2000"></label>
+        <span class="pill pill-red"><input id="triRed" type="checkbox" checked /> <label id="lblRed">Immediate (Red)</label></span>
+        <span class="pill pill-yellow"><input id="triYellow" type="checkbox" checked /> <label id="lblYellow">Delayed (Yellow)</label></span>
+        <span class="pill pill-green"><input id="triGreen" type="checkbox" checked /> <label id="lblGreen">Minimal (Green)</label></span>
       </div>
       
       <div class="row slider-row">
         <label class="pill">
-          Search Radius: <b id="radiusDisplay">1.5</b>° 
+          <span>Search Radius: <b id="radiusDisplay">1.5</b>°</span>
           <input id="searchBuffer" type="range" step="0.1" value="1.5" min="0.5" max="10.0">
         </label>
       </div>
 
+      <div class="row" style="margin-top: 16px;">
+        <button id="btnRoute" class="btn-primary">Run MASCAL Routing</button>
+        <button id="btnClearIsolation" style="display:none; color: #dc2626; border-color: #fca5a5; background: #fee2e2;">Clear Isolation</button>
+      </div>
+
       <div class="row">
-        <button id="btnRoute">Run MASCAL Routing</button>
-        <button id="btnClearIsolation" style="display:none; color: #d33; border-color: #d33;">Clear Isolation</button>
         <span class="pill"><input id="showRoutes" type="checkbox" checked /> <label for="showRoutes">Show routes</label></span>
         <span class="pill"><input id="showHotspots" type="checkbox" checked /> <label for="showHotspots">Hotspots</label></span>
         <span class="pill"><input id="clusterMode" type="checkbox" /> <label for="clusterMode">Cluster Mode</label></span>
@@ -123,14 +174,12 @@
 
       <div id="summary">
         <div class="kv"><span class="k">Hospitals in Radius:</span> <span id="facCount">–</span></div>
-        <div class="kv"><span class="k">Casualties:</span> <span id="caseCount">–</span></div>
-        <div class="kv"><span class="k">Routing Result:</span> <span id="routeSummary">Ready</span></div>
+        <div class="kv"><span class="k">Active Casualties:</span> <span id="caseCount">–</span></div>
+        <div class="kv"><span class="k">Routing Result:</span> <span id="routeSummary" style="color:#0078D7;">Ready</span></div>
       </div>
 
-      <div class="hr"></div>
-
-      <div style="opacity:0.85; font-size:12px;">
-        <div class="kv"><span class="k">Note:</span> Pre-loads up to 10° on startup. Adjust slider for real-time visualization.</div>
+      <div style="opacity:0.7; font-size:12px; margin-top: 12px; text-align: center;">
+        Note: Pre-loads up to 10° on startup. Adjust slider for real-time visualization.
       </div>
     </div>
   </div>
@@ -357,9 +406,9 @@
 
     function triageColor(triage) {
       const t = (triage || "").toLowerCase();
-      if (t.includes("red") || t.includes("immediate")) return "#d33";
-      if (t.includes("yellow") || t.includes("delayed")) return "#d9a300";
-      return "#2a7";
+      if (t.includes("red") || t.includes("immediate")) return "#dc2626";
+      if (t.includes("yellow") || t.includes("delayed")) return "#d97706";
+      return "#16a34a";
     }
 
     function facilityColor(bedsAvailable, bedsTotal) {
@@ -610,9 +659,9 @@
             c.count = c.visibleCount; 
             c.radiusMeters = 2000 + (c.visibleCount * 800); 
             
-            if (c.severity === 3) c.color = "#d33";
-            else if (c.severity === 2) c.color = "#d9a300";
-            else c.color = "#2a7";
+            if (c.severity === 3) c.color = "#dc2626";
+            else if (c.severity === 2) c.color = "#d97706";
+            else c.color = "#16a34a";
         });
     }
 
@@ -840,10 +889,10 @@
         return coords;
     }
 
-    function renderHotspots() {
+    function renderHotspots(preventReopen = false) {
       // 1. Capture the currently open cluster popup before clearing layers
       let openClusterIndex = null;
-      if (map && map._popup && map._popup.options && 'clusterIndex' in map._popup.options) {
+      if (!preventReopen && map && map._popup && map._popup.options && 'clusterIndex' in map._popup.options) {
           openClusterIndex = map._popup.options.clusterIndex;
       }
 
@@ -903,7 +952,7 @@
                     
                     let destStr = r ? 
                         `<span style="color: #0a7; font-weight: 500;">&rarr; ${r.facility_name} (${r.distance_km.toFixed(1)} km)</span><br><span style="font-size: 10px; color: #888;">${r.reason}</span>` : 
-                        `<span style="color: #b60; font-weight: 500;">&rarr; Unassigned / Pending</span>`;
+                        `<span style="color: #d97706; font-weight: 500;">&rarr; Unassigned / Pending</span>`;
 
                     patientDetailsHtml += `
                         <div style="margin-bottom:6px; padding-bottom: 6px; border-bottom: 1px solid rgba(0,0,0,0.05);">
@@ -934,21 +983,21 @@
               Total in Area:
             </div>
             <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 12px; border-top: 1px solid #eee; padding-top: 6px;">
-              <span style="color: #d33;" title="Immediate (Red)">T1: ${c.redCount || 0}</span>
-              <span style="color: #d9a300;" title="Delayed (Yellow)">T2: ${c.yellowCount || 0}</span>
-              <span style="color: #2a7;" title="Minimal (Green)">T3: ${c.greenCount || 0}</span>
+              <span style="color: #dc2626;" title="Immediate (Red)">T1: ${c.redCount || 0}</span>
+              <span style="color: #d97706;" title="Delayed (Yellow)">T2: ${c.yellowCount || 0}</span>
+              <span style="color: #16a34a;" title="Minimal (Green)">T3: ${c.greenCount || 0}</span>
             </div>
             ${!isolatedClusterCaseIds ? `
             <div style="margin-top: 10px; text-align: center;">
-                <button onclick="isolateClusterByIndex(${index})" style="width: 100%; background: #0078D7; color: white; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer;">Isolate Cluster</button>
+                <button onclick="isolateClusterByIndex(event, ${index})" style="width: 100%; background: #0078D7; color: white; border: none; padding: 6px; border-radius: 4px; font-weight: bold; cursor: pointer;">Isolate Cluster</button>
             </div>` : patientDetailsHtml}
           </div>
         `;
 
         let activeCats = [];
-        if (showRed && c.redCount > 0) activeCats.push({ color: "#d33", count: c.redCount });
-        if (showYellow && c.yellowCount > 0) activeCats.push({ color: "#d9a300", count: c.yellowCount });
-        if (showGreen && c.greenCount > 0) activeCats.push({ color: "#2a7", count: c.greenCount });
+        if (showRed && c.redCount > 0) activeCats.push({ color: "#dc2626", count: c.redCount });
+        if (showYellow && c.yellowCount > 0) activeCats.push({ color: "#d97706", count: c.yellowCount });
+        if (showGreen && c.greenCount > 0) activeCats.push({ color: "#16a34a", count: c.greenCount });
 
         activeCats.sort((a, b) => a.count - b.count);
 
@@ -1043,7 +1092,7 @@
           });
           
           Object.values(clusterRoutes).forEach(cr => {
-              const col = cr.severity === 3 ? "#d33" : (cr.severity === 2 ? "#d9a300" : "#2a7");
+              const col = cr.severity === 3 ? "#dc2626" : (cr.severity === 2 ? "#d97706" : "#16a34a");
               const edgeCoord = getEdgeCoord(
                   cr.cluster.lat, cr.cluster.lon, 
                   cr.facility_coord[1], cr.facility_coord[0], 
@@ -1102,7 +1151,7 @@
           });
 
           Object.values(aggregatedRoutes).forEach(g => {
-              const col = g.severity === 3 ? "#d33" : (g.severity === 2 ? "#d9a300" : "#2a7");
+              const col = g.severity === 3 ? "#dc2626" : (g.severity === 2 ? "#d97706" : "#16a34a");
               const baseWeight = Math.min(6, dynamicWeight * (1 + (g.patients.length - 1) * 0.15));
 
               const routeCoords = [[g.start_coord[1], g.start_coord[0]], [g.facility_coord[1], g.facility_coord[0]]];
@@ -1133,7 +1182,7 @@
         const buffer = document.getElementById("searchBuffer").value;
         const body = {
           triage_filters: ["Immediate (Red)", "Delayed (Yellow)", "Minimal (Green)"],
-          max_distance_km: Number(document.getElementById("maxKm").value || 350),
+          max_distance_km: 350,
           allow_outside_area: true,
           max_routes_draw: 500,
           buffer: parseFloat(buffer)
@@ -1173,27 +1222,17 @@
       } catch (e) { console.error(e); } finally { btn.disabled = false; }
     }
 
-    async function resetDemo() {
-      assignedFacilityIds.clear(); 
-      assignedPatientsByFacility = {};
-      isolatedClusterCaseIds = null;
-      document.getElementById("btnClearIsolation").style.display = "none";
-      document.getElementById("hideUnused").checked = false; 
-      await fetch("/api/demo/reset", { 
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ buffer: MAX_LOAD_RADIUS })
-      });
-      await loadAllData();
-      currentRoutes = [];
-      demoRoutesLayer.clearLayers();
-    }
-
-    window.isolateClusterByIndex = function(idx) {
+    window.isolateClusterByIndex = function(e, idx) {
+        // Stop the click from passing through the popup to the map polygon
+        if (e) e.stopPropagation(); 
+        
         const c = activeClusters[idx];
         if (!c) return;
         isolatedClusterCaseIds = new Set(c.cases);
         document.getElementById("btnClearIsolation").style.display = "inline-block";
+        
         map.closePopup();
+        map._popup = null; // Force clear the popup reference
         
         let lats = [], lons = [];
         currentCases.forEach(f => {
@@ -1218,7 +1257,7 @@
         updateMapDisplay();
         renderCases();
         renderRoutes();
-        renderHotspots();
+        renderHotspots(true); // Pass true to prevent the popup from re-opening
     };
 
     function clearIsolation() {
@@ -1233,7 +1272,6 @@
     document.getElementById("btnClearIsolation").addEventListener("click", clearIsolation);
     document.getElementById("searchBuffer").addEventListener("input", updateMapDisplay);
     document.getElementById("hideUnused").addEventListener("change", updateMapDisplay); 
-    document.getElementById("btnReset").addEventListener("click", resetDemo);
     document.getElementById("btnRoute").addEventListener("click", runRouting);
     document.getElementById("showRoutes").addEventListener("change", renderRoutes);
     document.getElementById("showHotspots").addEventListener("change", renderHotspots);
