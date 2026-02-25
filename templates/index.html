@@ -113,6 +113,7 @@
       <div class="row">
         <button id="btnRoute">Run MASCAL Routing</button>
         <span class="pill"><input id="showRoutes" type="checkbox" checked /> <label for="showRoutes">Show routes</label></span>
+        <span class="pill"><input id="showHotspots" type="checkbox" checked /> <label for="showHotspots">Hotspots</label></span>
         <span class="pill"><input id="hideUnused" type="checkbox" /> <label for="hideUnused">Hide unused</label></span>
       </div>
 
@@ -153,6 +154,7 @@
     }).addTo(map);
 
     // Using FeatureGroup instead of LayerGroup gives us bringToFront() and bringToBack() for canvas ordering
+    const demoHotspotsLayer = L.featureGroup().addTo(map);
     const demoRoutesLayer = L.featureGroup().addTo(map);
     const demoFacilitiesLayer = L.featureGroup().addTo(map);
     const demoCasesLayer = L.featureGroup().addTo(map);
@@ -170,6 +172,7 @@
 
     // Helper function to strictly enforce the Z-Order on the Canvas
     function enforceZOrder() {
+        if (map.hasLayer(demoHotspotsLayer)) demoHotspotsLayer.bringToBack();
         if (map.hasLayer(demoRoutesLayer)) demoRoutesLayer.bringToBack();
         if (map.hasLayer(demoFacilitiesLayer)) demoFacilitiesLayer.bringToFront();
         if (map.hasLayer(demoCasesLayer)) demoCasesLayer.bringToFront(); // Cases always on top
@@ -348,6 +351,7 @@
       L.control.layers({}, {
         "Hospitals (Real-time Simulation)": demoFacilitiesLayer,
         "MASCAL Casualties": demoCasesLayer,
+        "Crisis Hotspots": demoHotspotsLayer,
         "Evacuation Routes": demoRoutesLayer,
         "Healthsites (Base Layers)": healthsitesWays,
         "Healthsites (Points)": healthsitesNodes
@@ -377,6 +381,7 @@
             allFacilitiesFeatures = facFc.features || [];
 
             renderCases();
+            renderHotspots();
             updateMapDisplay(); 
             routeSummaryEl.textContent = "Ready";
         } catch (err) {
@@ -469,6 +474,78 @@
       enforceZOrder();
     }
 
+    function renderHotspots() {
+      demoHotspotsLayer.clearLayers();
+      if (!document.getElementById("showHotspots").checked) {
+          enforceZOrder();
+          return;
+      }
+
+      const showRed = document.getElementById("triRed").checked;
+      const showYellow = document.getElementById("triYellow").checked;
+      const showGreen = document.getElementById("triGreen").checked;
+
+      const clusters = [];
+      const CLUSTER_THRESHOLD_METERS = 2000; // 2 km radius to group casualties into the same hotspot
+
+      // Group cases by actual geographic proximity rather than sequence ID
+      currentCases.forEach(f => {
+        const triage = (f.properties.nato_triage || "").toLowerCase();
+        let isVisible = false;
+        if (showRed && (triage.includes("red") || triage.includes("immediate"))) isVisible = true;
+        if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) isVisible = true;
+        if (showGreen && (triage.includes("green") || triage.includes("minimal"))) isVisible = true;
+
+        if (isVisible) {
+          const lat = f.geometry.coordinates[1];
+          const lon = f.geometry.coordinates[0];
+          let foundCluster = null;
+          let minD = Infinity;
+
+          // Find the closest existing cluster within our threshold
+          for (const c of clusters) {
+              const d = map.distance([lat, lon], [c.lat, c.lon]);
+              if (d < CLUSTER_THRESHOLD_METERS && d < minD) {
+                  minD = d;
+                  foundCluster = c;
+              }
+          }
+
+          if (foundCluster) {
+              // Pull the center of the hotspot towards the density of casualties
+              foundCluster.lat = ((foundCluster.lat * foundCluster.count) + lat) / (foundCluster.count + 1);
+              foundCluster.lon = ((foundCluster.lon * foundCluster.count) + lon) / (foundCluster.count + 1);
+              foundCluster.count++;
+          } else {
+              // Start a new hotspot cluster
+              clusters.push({ lat: lat, lon: lon, count: 1 });
+          }
+        }
+      });
+
+      // Draw the massive hotspots
+      clusters.forEach(c => {
+        // Only draw a hotspot if there are multiple casualties clustered together
+        if (c.count > 4) {
+            // Base radius of 20 kilometers + 4 kilometers per casualty
+            const radiusMeters = 2000 + (c.count * 800); 
+
+            // FIX: Pass radius into the L.circle options so it actually sizes the circle
+            L.circle([c.lat, c.lon], {
+                radius: radiusMeters,
+                color: '#d33',
+                fillColor: '#d33',
+                fillOpacity: 0.20,
+                weight: 2,
+                dashArray: '6, 6',
+                interactive: false // Allows clicking through to markers below
+            }).addTo(demoHotspotsLayer);
+        }
+      });
+
+      enforceZOrder();
+    }
+    
     function renderRoutes() {
       demoRoutesLayer.clearLayers();
       if (!document.getElementById("showRoutes").checked) {
@@ -592,11 +669,12 @@
     document.getElementById("btnReset").addEventListener("click", resetDemo);
     document.getElementById("btnRoute").addEventListener("click", runRouting);
     document.getElementById("showRoutes").addEventListener("change", renderRoutes);
+    document.getElementById("showHotspots").addEventListener("change", renderHotspots);
     
     // 1. Direct checkbox clicks (Toggle specific color only)
-    document.getElementById("triRed").addEventListener("change", () => { renderCases(); renderRoutes(); });
-    document.getElementById("triYellow").addEventListener("change", () => { renderCases(); renderRoutes(); });
-    document.getElementById("triGreen").addEventListener("change", () => { renderCases(); renderRoutes(); });
+    document.getElementById("triRed").addEventListener("change", () => { renderCases(); renderRoutes(); renderHotspots(); });
+    document.getElementById("triYellow").addEventListener("change", () => { renderCases(); renderRoutes(); renderHotspots(); });
+    document.getElementById("triGreen").addEventListener("change", () => { renderCases(); renderRoutes(); renderHotspots(); });
 
     // 2. Text/Label clicks (Isolate the clicked color)
     document.getElementById("lblRed").addEventListener("click", () => {
@@ -605,6 +683,7 @@
       document.getElementById("triGreen").checked = false;
       renderCases(); 
       renderRoutes();
+      renderHotspots();
     });
 
     document.getElementById("lblYellow").addEventListener("click", () => {
@@ -613,6 +692,7 @@
       document.getElementById("triGreen").checked = false;
       renderCases(); 
       renderRoutes();
+      renderHotspots();
     });
 
     document.getElementById("lblGreen").addEventListener("click", () => {
@@ -621,12 +701,14 @@
       document.getElementById("triGreen").checked = true;
       renderCases(); 
       renderRoutes();
+      renderHotspots();
     });
 
     map.on('zoomend', () => {
       updateMapDisplay();
       renderCases();
       renderRoutes(); 
+      renderHotspots();
     });
 
     // Initial Load
