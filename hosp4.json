@@ -1,0 +1,22 @@
+{
+  "medical_center_id": "east_river",
+  "center_name": "East River Healthcare",
+  "gps": {
+    "lat": 64.16,
+    "long": -21.96
+  },
+  "bed_count": 220,
+  "free_beds": 60,
+  "intensive_care_beds": 12,
+  "trauma_facility": true,
+  "pediatric_ward": false,
+  "employees": {
+    "doctors": 45,
+    "nurses": 110,
+    "expertise": [
+      "neurology",
+      "cardiovascular"
+    ]
+  },
+  "update_time": "2026-02-25T10:00:00Z"
+}

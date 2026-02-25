@@ -1,0 +1,22 @@
+{
+  "facility_id": "south_valley",
+  "facility_name": "South Valley Medical",
+  "geo": {
+    "latitude": 64.15,
+    "longitude": -21.95
+  },
+  "total_beds": 180,
+  "open_beds": 50,
+  "critical_care_beds": 8,
+  "emergency_trauma_unit": true,
+  "child_care_unit": true,
+  "personnel": {
+    "physicians": 40,
+    "nursing_staff": 100,
+    "medical_specialties": [
+      "orthopedics",
+      "oncology"
+    ]
+  },
+  "last_modified": "2026-02-25T09:00:00Z"
+}
