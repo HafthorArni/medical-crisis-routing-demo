@@ -302,7 +302,7 @@
     let isFetchingOsrm = false;
     let osrmGeneration = 0;
 
-    async function processOsrmQueue(generation) {
+    async function processOsrmQueue(generation, animate = false) {
         if (isFetchingOsrm) return;
         isFetchingOsrm = true;
 
@@ -312,15 +312,23 @@
         let totalTasks = osrmQueue.length;
         let processed = 0;
 
+        // --- ONLY WAIT 1.2s IF THIS IS A BRAND NEW ROUTING RUN ---
+        if (animate) {
+            await new Promise(resolve => setTimeout(resolve, 1200));
+        }
+
+        const batchSize = 20; // Process multiple routes at once to create a cascading effect
+
         while (osrmQueue.length > 0) {
             if (generation !== osrmGeneration) break;
 
-            const task = osrmQueue.shift();
-            processed++;
+            // Take a chunk of tasks from the queue
+            const batch = osrmQueue.splice(0, batchSize);
 
-            if (!demoRoutesLayer.hasLayer(task.visualLine)) continue;
+            // Process them concurrently
+            await Promise.all(batch.map(async (task) => {
+                if (!demoRoutesLayer.hasLayer(task.visualLine)) return;
 
-            try {
                 const startKey = `${task.start[0].toFixed(3)},${task.start[1].toFixed(3)}`;
                 const endKey = `${task.end[0].toFixed(3)},${task.end[1].toFixed(3)}`;
                 const cacheKey = `${startKey}|${endKey}`;
@@ -328,7 +336,7 @@
                 if (osrmCache[cacheKey] === "FETCHING") {
                     osrmQueue.push(task); 
                     await new Promise(r => setTimeout(r, 100));
-                    continue;
+                    return;
                 }
 
                 if (osrmCache[cacheKey]) {
@@ -336,58 +344,67 @@
                         task.visualLine.setLatLngs(osrmCache[cacheKey]);
                         if (task.hitLine) task.hitLine.setLatLngs(osrmCache[cacheKey]);
                     }
-                    continue;
+                    return;
                 }
 
                 osrmCache[cacheKey] = "FETCHING";
 
-                if (processed % 2 === 0 || processed === 1) {
-                    const pct = Math.round((processed / totalTasks) * 100);
-                    summaryEl.innerHTML = `${baseSummary}<br><small style="color:#b60;">Snapping to roads... ${pct}%</small>`;
-                }
+                try {
+                    const url = `https://router.project-osrm.org/route/v1/driving/${task.start[0]},${task.start[1]};${task.end[0]},${task.end[1]}?overview=simplified&geometries=geojson`;
+                    const res = await fetch(url);
+                    
+                    if (res.status === 429) {
+                        osrmCache[cacheKey] = null; 
+                        osrmQueue.push(task); // re-queue to try again
+                        console.warn("OSRM API rate limit hit. Waiting 2.5s...");
+                        await new Promise(r => setTimeout(r, 2500));
+                        return;
+                    }
 
-                const url = `https://router.project-osrm.org/route/v1/driving/${task.start[0]},${task.start[1]};${task.end[0]},${task.end[1]}?overview=simplified&geometries=geojson`;
-                const res = await fetch(url);
-                
-                if (res.status === 429) {
-                    osrmCache[cacheKey] = null; 
-                    osrmQueue.unshift(task); 
-                    processed--; 
-                    console.warn("OSRM API rate limit hit. Waiting 2.5s...");
-                    await new Promise(r => setTimeout(r, 2500));
-                    continue;
-                }
+                    if (!res.ok) {
+                        console.warn(`OSRM failed (HTTP ${res.status}). Coordinates: ${cacheKey}`);
+                        osrmCache[cacheKey] = "NOROUTE";
+                        return;
+                    }
 
-                if (!res.ok) {
-                    console.warn(`OSRM failed (HTTP ${res.status}). Coordinates: ${cacheKey}`);
-                    osrmCache[cacheKey] = "NOROUTE";
-                    continue;
-                }
+                    const data = await res.json();
+                    let roadCoords = "NOROUTE";
+                    
+                    if (data.code === "Ok" && data.routes && data.routes.length > 0) {
+                        roadCoords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                    }
+                    
+                    osrmCache[cacheKey] = roadCoords;
+                    
+                    fetch("/api/demo/osrm_cache", {
+                        method: "POST",
+                        headers: {"Content-Type": "application/json"},
+                        body: JSON.stringify({ [cacheKey]: roadCoords })
+                    }).catch(e => console.warn("Cache save failed", e));
+                    
+                    if (roadCoords !== "NOROUTE") {
+                        task.visualLine.setLatLngs(roadCoords);
+                        if (task.hitLine) task.hitLine.setLatLngs(roadCoords);
+                    }
 
-                const data = await res.json();
-                let roadCoords = "NOROUTE";
-                
-                if (data.code === "Ok" && data.routes && data.routes.length > 0) {
-                    roadCoords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+                } catch (e) {
+                    console.error("OSRM Routing iteration failed:", e);
+                    osrmCache[cacheKey] = null;
+                    osrmQueue.push(task);
                 }
-                
-                osrmCache[cacheKey] = roadCoords;
-                
-                fetch("/api/demo/osrm_cache", {
-                    method: "POST",
-                    headers: {"Content-Type": "application/json"},
-                    body: JSON.stringify({ [cacheKey]: roadCoords })
-                }).catch(e => console.warn("Cache save failed", e));
-                
-                if (roadCoords !== "NOROUTE") {
-                    task.visualLine.setLatLngs(roadCoords);
-                    if (task.hitLine) task.hitLine.setLatLngs(roadCoords);
-                }
+            }));
 
-                await new Promise(r => setTimeout(r, 150));
+            processed += batch.length;
+            
+            // Limit percentage to 100% just in case re-queued elements throw the counter off slightly
+            const pct = Math.min(100, Math.round((processed / totalTasks) * 100));
+            summaryEl.innerHTML = `${baseSummary}<br><small style="color:#b60;">Snapping to roads... ${pct}%</small>`;
 
-            } catch (e) {
-                console.error("OSRM Routing iteration failed:", e);
+            // --- ONLY DELAY BETWEEN BATCHES IF ANIMATING ---
+            if (animate) {
+                await new Promise(r => setTimeout(r, 200));
+            } else {
+                await new Promise(r => setTimeout(r, 10)); // tiny yield to prevent UI freeze
             }
         }
         
@@ -1039,7 +1056,10 @@
       }
     }
     
-    function renderRoutes() {
+    function renderRoutes(isNewRun = false) {
+      // Ensure it's explicitly strictly true (protects against DOM Event objects passing through)
+      const animate = isNewRun === true; 
+      
       demoRoutesLayer.clearLayers();
       
       osrmGeneration++;
@@ -1101,21 +1121,35 @@
                   cr.cluster.radiusMeters
               );
               
-              const routeCoords = [edgeCoord, [cr.facility_coord[1], cr.facility_coord[0]]];
+              const startKey = `${cr.cluster.lon.toFixed(3)},${cr.cluster.lat.toFixed(3)}`;
+              const endKey = `${cr.facility_coord[0].toFixed(3)},${cr.facility_coord[1].toFixed(3)}`;
+              const cacheKey = `${startKey}|${endKey}`;
 
-              const visualLine = L.polyline(routeCoords, { weight: dynamicWeight * 2, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              const straightCoords = [edgeCoord, [cr.facility_coord[1], cr.facility_coord[0]]];
               
-              // Instead of binding the popup immediately, we attach the data so the map click handler can scan it
-              const hitLine = L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).addTo(demoRoutesLayer);
+              let initialCoords = straightCoords;
+              let needsQueue = true;
+
+              // If we are not animating and we already snapped this line, instantly draw the curved route
+              if (!animate && osrmCache[cacheKey] && osrmCache[cacheKey] !== "FETCHING" && osrmCache[cacheKey] !== "NOROUTE") {
+                  initialCoords = osrmCache[cacheKey];
+                  needsQueue = false;
+              }
+
+              const visualLine = L.polyline(initialCoords, { weight: dynamicWeight * 2, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              
+              const hitLine = L.polyline(initialCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).addTo(demoRoutesLayer);
               hitLine.isHitLine = true;
               hitLine.routeData = cr;
               
-              osrmQueue.push({
-                  start: [cr.cluster.lon, cr.cluster.lat], 
-                  end: cr.facility_coord,
-                  visualLine: visualLine,
-                  hitLine: hitLine
-              });
+              if (needsQueue || animate) {
+                  osrmQueue.push({
+                      start: [cr.cluster.lon, cr.cluster.lat], 
+                      end: cr.facility_coord,
+                      visualLine: visualLine,
+                      hitLine: hitLine
+                  });
+              }
           });
           
       } else {
@@ -1156,25 +1190,40 @@
               const col = g.severity === 3 ? "#dc2626" : (g.severity === 2 ? "#d97706" : "#16a34a");
               const baseWeight = Math.min(6, dynamicWeight * (1 + (g.patients.length - 1) * 0.15));
 
-              const routeCoords = [[g.start_coord[1], g.start_coord[0]], [g.facility_coord[1], g.facility_coord[0]]];
-              const visualLine = L.polyline(routeCoords, { weight: baseWeight, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              const startKey = `${g.start_coord[0].toFixed(3)},${g.start_coord[1].toFixed(3)}`;
+              const endKey = `${g.facility_coord[0].toFixed(3)},${g.facility_coord[1].toFixed(3)}`;
+              const cacheKey = `${startKey}|${endKey}`;
+
+              const straightCoords = [[g.start_coord[1], g.start_coord[0]], [g.facility_coord[1], g.facility_coord[0]]];
               
-              // Instead of binding the popup immediately, we attach the data so the map click handler can scan it
-              const hitLine = L.polyline(routeCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).addTo(demoRoutesLayer);
+              let initialCoords = straightCoords;
+              let needsQueue = true;
+
+              // If we are not animating and we already snapped this line, instantly draw the curved route
+              if (!animate && osrmCache[cacheKey] && osrmCache[cacheKey] !== "FETCHING" && osrmCache[cacheKey] !== "NOROUTE") {
+                  initialCoords = osrmCache[cacheKey];
+                  needsQueue = false;
+              }
+
+              const visualLine = L.polyline(initialCoords, { weight: baseWeight, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              
+              const hitLine = L.polyline(initialCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).addTo(demoRoutesLayer);
               hitLine.isHitLine = true;
               hitLine.routeData = g;
               
-              osrmQueue.push({
-                  start: g.start_coord,
-                  end: g.facility_coord,
-                  visualLine: visualLine,
-                  hitLine: hitLine
-              });
+              if (needsQueue || animate) {
+                  osrmQueue.push({
+                      start: g.start_coord,
+                      end: g.facility_coord,
+                      visualLine: visualLine,
+                      hitLine: hitLine
+                  });
+              }
           });
       }
       
       enforceZOrder();
-      processOsrmQueue(osrmGeneration); 
+      processOsrmQueue(osrmGeneration, animate);
     }
 
     async function runRouting() {
@@ -1213,7 +1262,8 @@
             }
         });
 
-        renderRoutes();
+        // Trigger animation for the fresh MASCAL run explicitly
+        renderRoutes(true);
 
         const facRes = await fetch(`/api/demo/facilities?buffer=${MAX_LOAD_RADIUS}`);
         const facFc = await facRes.json();
@@ -1280,7 +1330,8 @@
     
     document.getElementById("clusterMode").addEventListener("change", () => {
         renderCases();
-        renderRoutes();
+        // Trigger animation for explicitly changing cluster mode display
+        renderRoutes(true);
         renderHotspots();
     });
     
