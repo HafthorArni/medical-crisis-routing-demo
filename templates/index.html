@@ -264,16 +264,17 @@
                 <div style="max-height: 150px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">
                   ${pts.map(p => {
                      const pCol = triageColor(p.nato_triage);
+                     const distStr = p.distance_km ? ` (${p.distance_km.toFixed(1)} km)` : '';
                      return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
                                <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
-                               <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}
+                               <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}${distStr}
                              </div>`;
                   }).join('')}
                 </div>
               </div>
             `;
 
-            L.popup()
+            L.popup({ autoPan: false })
              .setLatLng(e.latlng)
              .setContent(popupHTML)
              .openOn(map);
@@ -716,7 +717,7 @@
 
       function showVTpopup(e) {
         const props = e.layer && e.layer.properties;
-        L.popup().setLatLng(e.latlng).setContent(popupTable(props, popupOrder)).openOn(map);
+        L.popup({ autoPan: false }).setLatLng(e.latlng).setContent(popupTable(props, popupOrder)).openOn(map);
       }
       healthsitesWays.on('click', showVTpopup);
       healthsitesNodes.on('click', showVTpopup);
@@ -817,8 +818,8 @@
                 });
 
                 const mHit = L.circleMarker([lat, lon], {
-                    radius: Math.max(20, rad + 12), color: "transparent", weight: 0, fillColor: "transparent", fillOpacity: 0, interactive: true
-                }).bindPopup(popupTable(p, ["facility_id","name","role_of_care","specialties","capacity"], facId));
+                    radius: Math.max(10, rad + 6), color: "transparent", weight: 0, fillColor: "transparent", fillOpacity: 0, interactive: true
+                }).bindPopup(popupTable(p, ["facility_id","name","role_of_care","specialties","capacity"], facId), { autoPan: false });
                 
                 mVisual.addTo(demoFacilitiesLayer);
                 mHit.addTo(demoFacilitiesLayer);
@@ -863,7 +864,7 @@
           
           L.marker([f.geometry.coordinates[1], f.geometry.coordinates[0]], {
             icon: getManIcon(c, dynamicSize)
-          }).bindPopup(popupTable(f.properties, patientKeys))
+          }).bindPopup(popupTable(f.properties, patientKeys), { autoPan: false })
             .addTo(demoCasesLayer);
           
           count++;
@@ -892,7 +893,8 @@
     function renderHotspots(preventReopen = false) {
       // 1. Capture the currently open cluster popup before clearing layers
       let openClusterIndex = null;
-      if (!preventReopen && map && map._popup && map._popup.options && 'clusterIndex' in map._popup.options) {
+      // Added .isOpen() to guarantee we only restore popups that are actually visible
+      if (!preventReopen && map && map._popup && map._popup.isOpen() && map._popup.options && 'clusterIndex' in map._popup.options) {
           openClusterIndex = map._popup.options.clusterIndex;
       }
 
@@ -1316,11 +1318,40 @@
       renderHotspots();
     });
 
+    let isProgrammatic = false;
+    
+    // Flag when the map is changing zoom so we don't fight user scrolling
+    map.on('zoomstart', () => { isProgrammatic = true; });
+    
     map.on('zoomend', () => {
+      isProgrammatic = true;
       updateMapDisplay();
       renderCases();
       renderRoutes(); 
       renderHotspots();
+      setTimeout(() => { isProgrammatic = false; }, 50);
+    });
+
+    // Perfectly center the popup without triggering destructive zoomend loops
+    map.on('popupopen', function(e) {
+        if (isProgrammatic) return;
+
+        // Give the popup a millisecond to render so we get its true physical height
+        setTimeout(() => {
+            if (!e.popup._map || !e.popup._container) return; 
+            
+            const popupHeight = e.popup._container.clientHeight;
+            const latlng = e.popup.getLatLng();
+            const px = map.project(latlng);
+            
+            // Shift Y upwards by half the popup height + offset for the pointer tip
+            px.y -= (popupHeight / 2) + 15;
+            
+            const targetLatLng = map.unproject(px);
+            
+            // Smoothly pan so the popup is absolutely dead-center in the viewport
+            map.panTo(targetLatLng, { animate: true, duration: 0.4 });
+        }, 10);
     });
 
     loadAllData();
