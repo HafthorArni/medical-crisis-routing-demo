@@ -582,6 +582,23 @@
       enforceZOrder();
     }
 
+    // Math helper to generate exact geographic coordinates for a circular polygon
+    function getCircleCoords(lat, lon, radiusMeters, points = 64) {
+        const coords = [];
+        const R = 6378137; // Earth's radius in meters
+        const d = radiusMeters / R;
+        const lat1 = lat * Math.PI / 180;
+        const lon1 = lon * Math.PI / 180;
+
+        for (let i = 0; i <= points; i++) {
+            const brng = (i / points) * 2 * Math.PI;
+            const lat2 = Math.asin(Math.sin(lat1) * Math.cos(d) + Math.cos(lat1) * Math.sin(d) * Math.cos(brng));
+            const lon2 = lon1 + Math.atan2(Math.sin(brng) * Math.sin(d) * Math.cos(lat1), Math.cos(d) - Math.sin(lat1) * Math.sin(lat2));
+            coords.push([lat2 * 180 / Math.PI, lon2 * 180 / Math.PI]);
+        }
+        return coords;
+    }
+
     function renderHotspots() {
       demoHotspotsLayer.clearLayers();
       if (!document.getElementById("showHotspots").checked && !document.getElementById("clusterMode").checked) {
@@ -589,11 +606,15 @@
           return;
       }
 
+      const showRed = document.getElementById("triRed").checked;
+      const showYellow = document.getElementById("triYellow").checked;
+      const showGreen = document.getElementById("triGreen").checked;
+
       activeClusters.forEach(c => {
         const popupHTML = `
           <div style="font:13px/1.25 system-ui,sans-serif; text-align: center; min-width: 170px;">
             <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
-              <b style="color: ${c.color}; font-size: 14px; text-transform: uppercase;">Crisis Cluster</b>
+              <b style="color: #111; font-size: 14px; text-transform: uppercase;">Crisis Cluster</b>
             </div>
             <div style="margin: 8px 0; font-size: 28px; font-weight: 800; color: #111; line-height: 1;">
               ${c.count}
@@ -613,17 +634,43 @@
           </div>
         `;
 
-        L.circle([c.lat, c.lon], {
-            radius: c.radiusMeters,
-            color: c.color,
-            fillColor: c.color,
-            fillOpacity: 0.20,
-            weight: 2,
-            dashArray: '6, 6',
-            interactive: true 
-        })
-        .bindPopup(popupHTML) 
-        .addTo(demoHotspotsLayer);
+        // 1. Gather active categories and their counts
+        let activeCats = [];
+        if (showRed && c.redCount > 0) activeCats.push({ color: "#d33", count: c.redCount });
+        if (showYellow && c.yellowCount > 0) activeCats.push({ color: "#d9a300", count: c.yellowCount });
+        if (showGreen && c.greenCount > 0) activeCats.push({ color: "#2a7", count: c.greenCount });
+
+        // 2. Sort by count ascending (fewest cases = innermost)
+        activeCats.sort((a, b) => a.count - b.count);
+
+        let currentCumulativeCount = 0;
+        let previousCoords = null;
+
+        // 3. Draw concentric polygons (using donuts to prevent color blending)
+        activeCats.forEach((cat, index) => {
+            currentCumulativeCount += cat.count;
+            
+            // Scale radius based on the cumulative share of patients up to this tier
+            let currentRadius = 2000 + (currentCumulativeCount * 800);
+            let currentCoords = getCircleCoords(c.lat, c.lon, currentRadius);
+
+            // The first tier is solid. 
+            // Subsequent tiers pass the previous tier's coordinates reversed to punch a hole.
+            let latlngs = index === 0 ? [currentCoords] : [currentCoords, [...previousCoords].reverse()];
+
+            L.polygon(latlngs, {
+                color: cat.color,
+                fillColor: cat.color,
+                fillOpacity: 0.35, // Slightly higher opacity since layers don't stack/blend anymore
+                weight: 2,
+                dashArray: '6, 6',
+                interactive: true 
+            })
+            .bindPopup(popupHTML)
+            .addTo(demoHotspotsLayer);
+
+            previousCoords = currentCoords;
+        });
       });
 
       enforceZOrder();
