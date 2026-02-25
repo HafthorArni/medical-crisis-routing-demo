@@ -1,0 +1,9 @@
+Flask>=3.0
+geopandas>=0.14
+pyogrio>=0.7
+shapely>=2.0
+pyproj>=3.6
+mapbox-vector-tile>=2.0
+cachetools>=5.3
+pandas>=2.2
+openpyxl>=3.1
