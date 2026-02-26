@@ -461,54 +461,102 @@
     }
 
     function popupTable(props, keys, facId = null) {
-      let incoming = facId ? (assignedPatientsByFacility[facId] || []) : [];
-      let totalIncoming = incoming.length;
-      let icuIncoming = incoming.filter(c => (c.nato_triage||"").toLowerCase().includes("red")).length;
+        let incoming = facId ? (assignedPatientsByFacility[facId] || []) : [];
+        let totalIncoming = incoming.length;
+        let icuIncoming = incoming.filter(c => (c.nato_triage||"").toLowerCase().includes("red")).length;
 
-      let html = '<div style="font:13px/1.25 system-ui,sans-serif; min-width: 220px;">';
-      for (const k of keys) {
-        const v = props ? props[k] : null;
-        if (v === undefined || v === null) continue;
+        // Detect if we are looking at a patient (all patient data is simulated)
+        const isPatient = props && props.case_id !== undefined;
 
-        if (k === "capacity" && typeof v === "object") {
-          html += `<div style="margin-top: 8px; padding-top: 4px; border-top: 1px solid #eee;">`;
-          html += `<span class="k" style="text-transform: uppercase; font-size: 11px; color: #666;">Capacity Status</span>`;
-          html += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 4px;">`;
-          
-          const bedAdd = totalIncoming > 0 ? ` <span style="color:#0078D7; font-weight:bold;" title="Newly assigned patients">+ ${totalIncoming}</span>` : "";
-          const icuAdd = icuIncoming > 0 ? ` <span style="color:#0078D7; font-weight:bold;" title="Newly assigned ICU patients">+ ${icuIncoming}</span>` : "";
+        // Categorize keys to apply the correct badges
+        const realKeys = [
+          "name", "amenity", "healthcare", "health_facility:type", "operator", "operator_type", 
+          "contact_phone", "contact:phone", "opening_hours", "website", "address", 
+          "wheelchair", "dispensing", "insurance", "water_source", "electricity", 
+          "operational_status", "bed_count"
+        ];
+        
+        const demoKeys = [
+          "role_of_care", "capacity", "specialties", "staff", "in_crisis_area", 
+          "facility_id", "case_id", "age", "sex", "branch", "nato_triage", 
+          "diagnosis", "evacuation_recommendation"
+        ];
 
-          html += `<div class="kv">Beds: <b>${v.beds_available}/${v.beds_total}</b>${bedAdd}</div>`;
-          html += `<div class="kv">ICU: <b>${v.icu_available}/${v.icu_total}</b>${icuAdd}</div>`;
-          html += `<div class="kv">Vents: <b>${v.vent_available}/${v.vent_total}</b>${icuAdd}</div>`;
-          html += `</div></div>`;
-        } else if (Array.isArray(v)) {
-          if (!v.length) continue;
-          html += `<div class="kv"><span class="k mono">${k}</span>: ${v.join(", ")}</div>`;
-        } else {
-          const s = String(v).trim();
-          if (!s) continue;
-          html += `<div class="kv"><span class="k mono">${k}</span>: ${s}</div>`;
+        // Badge HTML templates
+        const badgeReal = `<span style="background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; padding: 2px 4px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-right: 6px; vertical-align: middle; letter-spacing: 0.5px;">REAL</span>`;
+        const badgeDemo = `<span style="background: #ffedd5; color: #c2410c; border: 1px solid #fed7aa; padding: 2px 4px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-right: 6px; vertical-align: middle; letter-spacing: 0.5px;">SIMULATED</span>`;
+        const badgeSys = `<span style="background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; padding: 2px 4px; border-radius: 4px; font-size: 9px; font-weight: bold; margin-right: 6px; vertical-align: middle;">SYS</span>`;
+
+        let html = '<div style="font:13px/1.25 system-ui,sans-serif; min-width: 280px;">';
+        
+        for (const k of keys) {
+          const v = props ? props[k] : null;
+          if (v === undefined || v === null || v === "") continue;
+
+          let badge = badgeSys;
+          let valColor = "color: #0f172a;"; 
+
+          // Apply categorization logic
+          if (isPatient) {
+              badge = badgeDemo;
+              valColor = "color: #c2410c; font-weight: 500;";
+          } else {
+              if (realKeys.includes(k)) { 
+                  badge = badgeReal; 
+                  valColor = "color: #166534; font-weight: 500;"; 
+              } else if (demoKeys.includes(k)) { 
+                  badge = badgeDemo; 
+                  valColor = "color: #c2410c; font-weight: 500;"; 
+              }
+          }
+
+          // Handle the nested capacity object specifically to style it as simulated
+          if (k === "capacity" && typeof v === "object") {
+            html += `<div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #eee;">`;
+            html += `<div>${badgeDemo} <span class="k" style="text-transform: uppercase; font-size: 11px; color: #c2410c;">Capacity Status</span></div>`;
+            html += `<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-top: 6px; background: #fff7ed; padding: 6px; border-radius: 6px; border: 1px solid #ffedd5;">`;
+            
+            const bedAdd = totalIncoming > 0 ? ` <span style="color:#0078D7; font-weight:bold;" title="Newly assigned patients">+ ${totalIncoming}</span>` : "";
+            const icuAdd = icuIncoming > 0 ? ` <span style="color:#0078D7; font-weight:bold;" title="Newly assigned ICU patients">+ ${icuIncoming}</span>` : "";
+
+            html += `<div class="kv" style="margin-bottom: 0;">Beds: <b style="color: #c2410c;">${v.beds_available}/${v.beds_total}</b>${bedAdd}</div>`;
+            html += `<div class="kv" style="margin-bottom: 0;">ICU: <b style="color: #c2410c;">${v.icu_available}/${v.icu_total}</b>${icuAdd}</div>`;
+            html += `<div class="kv" style="margin-bottom: 0; grid-column: span 2;">Vents: <b style="color: #c2410c;">${v.vent_available}/${v.vent_total}</b>${icuAdd}</div>`;
+            html += `</div></div>`;
+          } else if (Array.isArray(v)) {
+            if (!v.length) continue;
+            html += `<div class="kv" style="margin-top: 6px; align-items: flex-start;">
+                      <div style="white-space: nowrap;">${badge}<span class="k mono">${k}</span></div> 
+                      <span style="${valColor} text-align: right; word-break: break-word; margin-left: 8px;">${v.join(", ")}</span>
+                    </div>`;
+          } else {
+            const s = String(v).trim();
+            if (!s) continue;
+            html += `<div class="kv" style="margin-top: 6px; align-items: flex-start;">
+                      <div style="white-space: nowrap;">${badge}<span class="k mono">${k}</span></div> 
+                      <span style="${valColor} text-align: right; word-break: break-word; margin-left: 8px;">${s}</span>
+                    </div>`;
+          }
         }
-      }
 
-      if (totalIncoming > 0) {
-          html += `<div style="margin-top: 8px; padding-top: 4px; border-top: 1px solid #eee;">`;
-          html += `<span class="k" style="text-transform: uppercase; font-size: 11px; color: #666;">Incoming Patients (${totalIncoming})</span>`;
-          html += `<div style="max-height: 120px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">`;
-          incoming.forEach(p => {
-              const tColor = triageColor(p.nato_triage);
-              html += `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
-                         <b style="color:${tColor}; font-size: 14px; line-height: 10px;">&bull;</b> 
-                         <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}
-                       </div>`;
-          });
-          html += `</div></div>`;
-      }
+        // Incoming patients assignment block (also explicitly simulation data)
+        if (totalIncoming > 0) {
+            html += `<div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #eee;">`;
+            html += `<div>${badgeDemo} <span class="k" style="text-transform: uppercase; font-size: 11px; color: #c2410c;">Incoming Patients (${totalIncoming})</span></div>`;
+            html += `<div style="max-height: 120px; overflow-y: auto; margin-top:6px; font-size: 11.5px; background: #fff7ed; border: 1px solid #ffedd5; padding: 4px; border-radius: 4px;">`;
+            incoming.forEach(p => {
+                const tColor = triageColor(p.nato_triage);
+                html += `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(194,65,12,0.1); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(194,65,12,0.05)'" onmouseout="this.style.background='transparent'">
+                          <b style="color:${tColor}; font-size: 14px; line-height: 10px;">&bull;</b> 
+                          <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; <span style="color: #c2410c;">${p.nato_triage}</span>
+                        </div>`;
+            });
+            html += `</div></div>`;
+        }
 
-      html += '</div>';
-      return html;
-    }
+        html += '</div>';
+        return html;
+      }
 
     window.showPatient = function(caseId) {
         // Prevent the click from registering on the map and closing the popup
@@ -836,7 +884,13 @@
 
                 const mHit = L.circleMarker([lat, lon], {
                     radius: Math.max(10, rad + 6), color: "transparent", weight: 0, fillColor: "transparent", fillOpacity: 0, interactive: true
-                }).bindPopup(popupTable(p, ["facility_id","name","role_of_care","specialties","capacity"], facId), { autoPan: false });
+                }).bindPopup(popupTable(p, [
+                    "facility_id", "name", "role_of_care", "specialties", "capacity", "staff",
+                    "amenity", "healthcare", "operator", "operator_type", "contact_phone",
+                    "opening_hours", "website", "address", "wheelchair", "dispensing",
+                    "insurance", "water_source", "electricity", "operational_status",
+                    "source", "last_updated"
+                ], facId), { autoPan: false });
                 
                 mVisual.addTo(demoFacilitiesLayer);
                 mHit.addTo(demoFacilitiesLayer);
