@@ -164,6 +164,7 @@
       </div>
 
       <div class="row">
+        <span class="pill"><input id="showPatients" type="checkbox" checked /> <label for="showPatients">Show patients</label></span>
         <span class="pill"><input id="showRoutes" type="checkbox" checked /> <label for="showRoutes">Show routes</label></span>
         <span class="pill"><input id="showHotspots" type="checkbox" checked /> <label for="showHotspots">Hotspots</label></span>
         <span class="pill"><input id="clusterMode" type="checkbox" /> <label for="clusterMode">Cluster Mode</label></span>
@@ -215,6 +216,9 @@
     // --- OVERLAPPING ROUTES HANDLER ---
     // When the map is clicked, scan ALL rendered routes to see which ones are underneath the cursor.
     // This allows us to combine overlapping road networks into a single cohesive patient manifest.
+    // --- OVERLAPPING ROUTES HANDLER ---
+    // When the map is clicked, scan ALL rendered routes to see which ones are underneath the cursor.
+    // This allows us to combine overlapping road networks into a single cohesive patient manifest.
     demoRoutesLayer.on('click', function(e) {
         const clickPoint = map.latLngToLayerPoint(e.latlng);
         let combinedPatients = new Map();
@@ -247,14 +251,40 @@
         });
 
         if (combinedPatients.size > 0) {
-            // Sort patients by severity (Red -> Yellow -> Green) for display
-            const pts = Array.from(combinedPatients.values()).sort((a,b) => {
+            // Read current filter states
+            const showRed = document.getElementById("triRed").checked;
+            const showYellow = document.getElementById("triYellow").checked;
+            const showGreen = document.getElementById("triGreen").checked;
+
+            // Filter and sort patients by severity
+            const pts = Array.from(combinedPatients.values()).filter(p => {
+                const triage = (p.nato_triage || "").toLowerCase();
+                if (showRed && (triage.includes("red") || triage.includes("immediate"))) return true;
+                if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) return true;
+                if (showGreen && (triage.includes("green") || triage.includes("minimal"))) return true;
+                return false;
+            }).sort((a,b) => {
                 const svA = a.nato_triage.toLowerCase().includes("red") ? 3 : (a.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
                 const svB = b.nato_triage.toLowerCase().includes("red") ? 3 : (b.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
                 return svB - svA; 
             });
             
             let destStr = Array.from(destinations).join(', ');
+            
+            // Build the HTML for the patient list or show a fallback message if all are filtered out
+            let patientsHtml = '';
+            if (pts.length === 0) {
+                patientsHtml = `<div style="color: #888; font-style: italic; padding: 4px;">No patients match current filters.</div>`;
+            } else {
+                patientsHtml = pts.map(p => {
+                     const pCol = triageColor(p.nato_triage);
+                     const distStr = p.distance_km ? ` (${p.distance_km.toFixed(1)} km)` : '';
+                     return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
+                               <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
+                               <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}${distStr}
+                             </div>`;
+                }).join('');
+            }
 
             const popupHTML = `
               <div style="font:13px/1.25 system-ui,sans-serif; min-width: 250px;">
@@ -264,14 +294,7 @@
                 <div class="kv"><span class="k mono">Destinations:</span> ${destStr}</div>
                 <div class="kv" style="margin-top: 6px;"><span class="k mono">Patients Traveling (${pts.length}):</span></div>
                 <div style="max-height: 150px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">
-                  ${pts.map(p => {
-                     const pCol = triageColor(p.nato_triage);
-                     const distStr = p.distance_km ? ` (${p.distance_km.toFixed(1)} km)` : '';
-                     return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
-                               <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
-                               <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}${distStr}
-                             </div>`;
-                  }).join('')}
+                  ${patientsHtml}
                 </div>
               </div>
             `;
@@ -487,7 +510,22 @@
     }
 
     function popupTable(props, keys, facId = null) {
-        let incoming = facId ? (assignedPatientsByFacility[facId] || []) : [];
+        let incomingRaw = facId ? (assignedPatientsByFacility[facId] || []) : [];
+        
+        // Read current filter states
+        const showRed = document.getElementById("triRed").checked;
+        const showYellow = document.getElementById("triYellow").checked;
+        const showGreen = document.getElementById("triGreen").checked;
+
+        // Apply filters to incoming patients
+        let incoming = incomingRaw.filter(p => {
+            const triage = (p.nato_triage || "").toLowerCase();
+            if (showRed && (triage.includes("red") || triage.includes("immediate"))) return true;
+            if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) return true;
+            if (showGreen && (triage.includes("green") || triage.includes("minimal"))) return true;
+            return false;
+        });
+
         let totalIncoming = incoming.length;
         let icuIncoming = incoming.filter(c => (c.nato_triage||"").toLowerCase().includes("red")).length;
 
@@ -582,7 +620,7 @@
 
         html += '</div>';
         return html;
-      }
+    }
 
     window.showPatient = function(caseId) {
         // Prevent the click from registering on the map and closing the popup
@@ -930,7 +968,8 @@
     function renderCases() {
       demoCasesLayer.clearLayers();
       
-      if (document.getElementById("clusterMode").checked) {
+      // If cluster mode is on OR show patients is unchecked, don't draw individual figures
+      if (document.getElementById("clusterMode").checked || !document.getElementById("showPatients").checked) {
           enforceZOrder();
           return; 
       }
@@ -1419,6 +1458,7 @@
     document.getElementById("searchBuffer").addEventListener("input", updateMapDisplay);
     document.getElementById("hideUnused").addEventListener("change", updateMapDisplay); 
     document.getElementById("btnRoute").addEventListener("click", runRouting);
+    document.getElementById("showPatients").addEventListener("change", renderCases);
     document.getElementById("showRoutes").addEventListener("change", renderRoutes);
     document.getElementById("showHotspots").addEventListener("change", renderHotspots);
     
