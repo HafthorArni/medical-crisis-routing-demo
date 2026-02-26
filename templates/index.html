@@ -219,19 +219,150 @@
     // --- OVERLAPPING ROUTES HANDLER ---
     // When the map is clicked, scan ALL rendered routes to see which ones are underneath the cursor.
     // This allows us to combine overlapping road networks into a single cohesive patient manifest.
+    let activeRoutePopup = null;
+    // --- OVERLAPPING ROUTES HANDLER ---
+    // When the map is clicked, scan ALL rendered routes to see which ones are underneath the cursor.
+    // This allows us to combine overlapping road networks into a single cohesive patient manifest.
+    let activeRoutePopupData = null;
+
+    map.on('click', function(e) {
+        let clickedRoutes = [];
+        const clickPoint = map.latLngToLayerPoint(e.latlng);
+        const HIT_TOLERANCE = 15; // 15 pixels of "fat finger" leeway
+
+        demoRoutesLayer.eachLayer(layer => {
+            // Check if it's a route line holding our data
+            if (layer.routeData || layer.isHitLine) {
+                
+                // SUPER OPTIMIZATION 1: O(1) Pixel Bounding Box Check
+                // Instantly skips roads using pre-rendered canvas pixels instead of geographic math
+                if (layer._pxBounds) {
+                    const min = layer._pxBounds.min;
+                    const max = layer._pxBounds.max;
+                    
+                    if (clickPoint.x < min.x - HIT_TOLERANCE || clickPoint.x > max.x + HIT_TOLERANCE || 
+                        clickPoint.y < min.y - HIT_TOLERANCE || clickPoint.y > max.y + HIT_TOLERANCE) {
+                        return; // Click was outside this road's general area
+                    }
+                } else {
+                    return; // Line isn't currently drawn on screen
+                }
+
+                // SUPER OPTIMIZATION 2: Loop through pre-calculated screen pixels
+                if (layer._parts && layer._parts.length > 0) {
+                    let isHit = false;
+                    for (let p = 0; p < layer._parts.length; p++) {
+                        let ring = layer._parts[p];
+                        for (let i = 0; i < ring.length - 1; i++) {
+                            const dist = L.LineUtil.pointToSegmentDistance(clickPoint, ring[i], ring[i+1]);
+                            if (dist < HIT_TOLERANCE) { 
+                                clickedRoutes.push(layer.routeData || layer);
+                                isHit = true;
+                                break;
+                            }
+                        }
+                        if (isHit) break;
+                    }
+                }
+            }
+        });
+
+        if (clickedRoutes.length > 0) {
+            let combinedPatients = new Map();
+            let destinations = new Set();
+
+            clickedRoutes.forEach(r => {
+                // Ensure we handle both potential data attachment styles
+                let data = r.routeData || r; 
+                if (data.patients) {
+                    data.patients.forEach(p => combinedPatients.set(p.case_id, p));
+                    destinations.add(data.facility_name);
+                }
+            });
+
+            activeRoutePopupData = {
+                latlng: e.latlng,
+                combinedPatients: combinedPatients,
+                destinations: destinations
+            };
+
+            activeRoutePopup = L.popup({ autoPan: false, isRoutePopup: true })
+                .setLatLng(e.latlng)
+                .setContent("Loading...")
+                .openOn(map);
+
+            updateActiveRoutePopup();
+        }
+    })
+
+    window.updateActiveRoutePopup = function() {
+        // Explicitly check our tracked popup instance instead of map._popup
+        if (!activeRoutePopup || !activeRoutePopup.isOpen() || !activeRoutePopupData) return;
+
+        const { latlng, combinedPatients, destinations } = activeRoutePopupData;
+
+        // Read current filter states
+        const showRed = document.getElementById("triRed").checked;
+        const showYellow = document.getElementById("triYellow").checked;
+        const showGreen = document.getElementById("triGreen").checked;
+
+        // Filter and sort patients by severity
+        const pts = Array.from(combinedPatients.values()).filter(p => {
+            const triage = (p.nato_triage || "").toLowerCase();
+            if (showRed && (triage.includes("red") || triage.includes("immediate"))) return true;
+            if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) return true;
+            if (showGreen && (triage.includes("green") || triage.includes("minimal"))) return true;
+            return false;
+        }).sort((a,b) => {
+            const svA = a.nato_triage.toLowerCase().includes("red") ? 3 : (a.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
+            const svB = b.nato_triage.toLowerCase().includes("red") ? 3 : (b.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
+            return svB - svA; 
+        });
+        
+        let destStr = Array.from(destinations).join(', ');
+        
+        let patientsHtml = '';
+        if (pts.length === 0) {
+            patientsHtml = `<div style="color: #888; font-style: italic; padding: 4px;">No patients match current filters.</div>`;
+        } else {
+            patientsHtml = pts.map(p => {
+                 const pCol = triageColor(p.nato_triage);
+                 const distStr = p.distance_km ? ` (${p.distance_km.toFixed(1)} km)` : '';
+                 return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
+                           <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
+                           <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}${distStr}
+                         </div>`;
+            }).join('');
+        }
+
+        const popupHTML = `
+          <div style="font:13px/1.25 system-ui,sans-serif; min-width: 250px;">
+            <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
+              <b style="font-size: 14px;">Traffic on this Route Segment</b>
+            </div>
+            <div class="kv"><span class="k mono">Destinations:</span> ${destStr}</div>
+            <div class="kv" style="margin-top: 6px;"><span class="k mono">Patients Traveling (${pts.length}):</span></div>
+            <div style="max-height: 150px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">
+              ${patientsHtml}
+            </div>
+          </div>
+        `;
+
+        activeRoutePopup.setContent(popupHTML);
+        activeRoutePopup.update();
+    };
+
     demoRoutesLayer.on('click', function(e) {
         const clickPoint = map.latLngToLayerPoint(e.latlng);
         let combinedPatients = new Map();
         let destinations = new Set();
         
         demoRoutesLayer.eachLayer((layer) => {
-            // Only process our invisible "hit lines"
             if (layer.isHitLine && layer.routeData) {
                 const latlngs = layer.getLatLngs();
                 if (!latlngs || latlngs.length < 2) return;
                 
                 let minDist = Infinity;
-                // Calculate distance from cursor to every segment of the polyline
                 for (let i = 0; i < latlngs.length - 1; i++) {
                     const p1 = map.latLngToLayerPoint(latlngs[i]);
                     const p2 = map.latLngToLayerPoint(latlngs[i+1]);
@@ -239,11 +370,9 @@
                     if (dist < minDist) minDist = dist;
                 }
                 
-                // If the cursor is within 15 pixels of the line, it's a hit
                 if (minDist <= 15) {
                     destinations.add(layer.routeData.facility_name);
                     layer.routeData.patients.forEach(p => {
-                        // Using a Map with case_id prevents duplicating patients if geometries glitch
                         combinedPatients.set(p.case_id, p);
                     });
                 }
@@ -251,60 +380,90 @@
         });
 
         if (combinedPatients.size > 0) {
-            // Read current filter states
-            const showRed = document.getElementById("triRed").checked;
-            const showYellow = document.getElementById("triYellow").checked;
-            const showGreen = document.getElementById("triGreen").checked;
-
-            // Filter and sort patients by severity
-            const pts = Array.from(combinedPatients.values()).filter(p => {
-                const triage = (p.nato_triage || "").toLowerCase();
-                if (showRed && (triage.includes("red") || triage.includes("immediate"))) return true;
-                if (showYellow && (triage.includes("yellow") || triage.includes("delayed"))) return true;
-                if (showGreen && (triage.includes("green") || triage.includes("minimal"))) return true;
-                return false;
-            }).sort((a,b) => {
-                const svA = a.nato_triage.toLowerCase().includes("red") ? 3 : (a.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
-                const svB = b.nato_triage.toLowerCase().includes("red") ? 3 : (b.nato_triage.toLowerCase().includes("yellow") ? 2 : 1);
-                return svB - svA; 
-            });
+            activeRoutePopupData = { latlng: e.latlng, combinedPatients, destinations };
             
-            let destStr = Array.from(destinations).join(', ');
-            
-            // Build the HTML for the patient list or show a fallback message if all are filtered out
-            let patientsHtml = '';
-            if (pts.length === 0) {
-                patientsHtml = `<div style="color: #888; font-style: italic; padding: 4px;">No patients match current filters.</div>`;
-            } else {
-                patientsHtml = pts.map(p => {
-                     const pCol = triageColor(p.nato_triage);
-                     const distStr = p.distance_km ? ` (${p.distance_km.toFixed(1)} km)` : '';
-                     return `<div onclick="showPatient(${p.case_id})" title="Click for patient details" style="margin-bottom:3px; padding-bottom: 3px; border-bottom: 1px solid rgba(0,0,0,0.05); cursor: pointer; transition: background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.05)'" onmouseout="this.style.background='transparent'">
-                               <b style="color:${pCol}; font-size: 14px; line-height: 10px;">&bull;</b> 
-                               <span style="color: #0078D7; text-decoration: underline;"><b>Case ${p.case_id}</b></span> &mdash; ${p.nato_triage}${distStr}
-                             </div>`;
-                }).join('');
-            }
-
-            const popupHTML = `
-              <div style="font:13px/1.25 system-ui,sans-serif; min-width: 250px;">
-                <div style="margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #eee;">
-                  <b style="font-size: 14px;">Traffic on this Route Segment</b>
-                </div>
-                <div class="kv"><span class="k mono">Destinations:</span> ${destStr}</div>
-                <div class="kv" style="margin-top: 6px;"><span class="k mono">Patients Traveling (${pts.length}):</span></div>
-                <div style="max-height: 150px; overflow-y: auto; margin-top:4px; font-size: 11.5px; background: rgba(0,0,0,0.02); padding: 4px; border-radius: 4px;">
-                  ${patientsHtml}
-                </div>
-              </div>
-            `;
-
-            L.popup({ autoPan: false })
+            // Store the explicit popup instance in our tracking variable
+            activeRoutePopup = L.popup({ autoPan: false })
              .setLatLng(e.latlng)
-             .setContent(popupHTML)
+             .setContent("Loading...")
              .openOn(map);
+             
+            updateActiveRoutePopup();
         }
     });
+
+    function updateMapDisplay() {
+        const bufferVal = parseFloat(document.getElementById("searchBuffer").value);
+        const hideUnused = document.getElementById("hideUnused").checked; 
+        const currentZoom = map.getZoom(); 
+        document.getElementById("radiusDisplay").textContent = bufferVal.toFixed(1);
+        
+        // --- Added: Remember open facility popup ---
+        let openFacId = null;
+        if (map._popup && map._popup.isOpen() && map._popup.options && map._popup.options.facId !== undefined) {
+            openFacId = map._popup.options.facId;
+        }
+        
+        let activeIsolatedFacilities = new Set();
+        if (isolatedClusterCaseIds) {
+            currentRoutes.forEach(r => {
+                if (isolatedClusterCaseIds.has(r.case_id) && r.facility_id) {
+                    activeIsolatedFacilities.add(String(r.facility_id));
+                }
+            });
+        }
+        
+        demoFacilitiesLayer.clearLayers();
+        if (!casualtyBounds) return;
+
+        let count = 0;
+        allFacilitiesFeatures.forEach(f => {
+            const [lon, lat] = f.geometry.coordinates;
+            const p = f.properties || {};
+            const facId = String(p.facility_id);
+
+            const inBounds = (lon >= casualtyBounds.minLon - bufferVal && lon <= casualtyBounds.maxLon + bufferVal &&
+                              lat >= casualtyBounds.minLat - bufferVal && lat <= casualtyBounds.maxLat + bufferVal);
+            
+            const isUsed = assignedFacilityIds.has(facId);
+            let shouldShow = inBounds && (!hideUnused || isUsed);
+
+            if (isolatedClusterCaseIds) {
+                shouldShow = activeIsolatedFacilities.has(facId);
+            }
+
+            if (shouldShow) {
+                const cap = p.capacity || {};
+                const c = facilityColor(cap.beds_available, cap.beds_total);
+                const rad = facilityRadius(p.role_of_care, currentZoom);
+
+                const mVisual = L.circleMarker([lat, lon], {
+                    radius: rad, color: "#111", weight: 1, fillColor: c, fillOpacity: 0.9, interactive: false
+                });
+
+                // --- Added: Append facId to bindPopup options ---
+                const mHit = L.circleMarker([lat, lon], {
+                    radius: Math.max(10, rad + 6), color: "transparent", weight: 0, fillColor: "transparent", fillOpacity: 0, interactive: true
+                }).bindPopup(popupTable(p, [
+                    "facility_id", "name", "role_of_care", "specialties", "capacity", "staff",
+                    "amenity", "healthcare", "operator", "operator_type", "contact_phone",
+                    "opening_hours", "website", "address", "wheelchair", "dispensing",
+                    "insurance", "water_source", "electricity", "operational_status",
+                    "source", "last_updated"
+                ], facId), { autoPan: false, facId: facId });
+                
+                mVisual.addTo(demoFacilitiesLayer);
+                mHit.addTo(demoFacilitiesLayer);
+                
+                // --- Added: Reopen if it was open ---
+                if (openFacId === facId) mHit.openPopup();
+                
+                count++;
+            }
+        });
+        document.getElementById("facCount").textContent = count;
+        enforceZOrder();
+    }
 
     let healthsitesWays = null;
     let healthsitesNodes = null;
@@ -903,72 +1062,15 @@
         }
     }
 
-    function updateMapDisplay() {
-        const bufferVal = parseFloat(document.getElementById("searchBuffer").value);
-        const hideUnused = document.getElementById("hideUnused").checked; 
-        const currentZoom = map.getZoom(); 
-        document.getElementById("radiusDisplay").textContent = bufferVal.toFixed(1);
-        
-        let activeIsolatedFacilities = new Set();
-        if (isolatedClusterCaseIds) {
-            currentRoutes.forEach(r => {
-                if (isolatedClusterCaseIds.has(r.case_id) && r.facility_id) {
-                    activeIsolatedFacilities.add(String(r.facility_id));
-                }
-            });
-        }
-        
-        demoFacilitiesLayer.clearLayers();
-        if (!casualtyBounds) return;
-
-        let count = 0;
-        allFacilitiesFeatures.forEach(f => {
-            const [lon, lat] = f.geometry.coordinates;
-            const p = f.properties || {};
-            const facId = String(p.facility_id);
-
-            const inBounds = (lon >= casualtyBounds.minLon - bufferVal && lon <= casualtyBounds.maxLon + bufferVal &&
-                              lat >= casualtyBounds.minLat - bufferVal && lat <= casualtyBounds.maxLat + bufferVal);
-            
-            const isUsed = assignedFacilityIds.has(facId);
-            let shouldShow = inBounds && (!hideUnused || isUsed);
-
-            if (isolatedClusterCaseIds) {
-                shouldShow = activeIsolatedFacilities.has(facId);
-            }
-
-            if (shouldShow) {
-                const cap = p.capacity || {};
-                const c = facilityColor(cap.beds_available, cap.beds_total);
-                const rad = facilityRadius(p.role_of_care, currentZoom);
-
-                const mVisual = L.circleMarker([lat, lon], {
-                    radius: rad, color: "#111", weight: 1, fillColor: c, fillOpacity: 0.9, interactive: false
-                });
-
-                const mHit = L.circleMarker([lat, lon], {
-                    radius: Math.max(10, rad + 6), color: "transparent", weight: 0, fillColor: "transparent", fillOpacity: 0, interactive: true
-                }).bindPopup(popupTable(p, [
-                    "facility_id", "name", "role_of_care", "specialties", "capacity", "staff",
-                    "amenity", "healthcare", "operator", "operator_type", "contact_phone",
-                    "opening_hours", "website", "address", "wheelchair", "dispensing",
-                    "insurance", "water_source", "electricity", "operational_status",
-                    "source", "last_updated"
-                ], facId), { autoPan: false });
-                
-                mVisual.addTo(demoFacilitiesLayer);
-                mHit.addTo(demoFacilitiesLayer);
-                count++;
-            }
-        });
-        document.getElementById("facCount").textContent = count;
-        enforceZOrder();
-    }
-
     function renderCases() {
+      // --- Added: Remember open patient popup ---
+      let openCaseId = null;
+      if (map._popup && map._popup.isOpen() && map._popup.options && map._popup.options.caseId !== undefined) {
+          openCaseId = map._popup.options.caseId;
+      }
+
       demoCasesLayer.clearLayers();
       
-      // If cluster mode is on OR show patients is unchecked, don't draw individual figures
       if (document.getElementById("clusterMode").checked || !document.getElementById("showPatients").checked) {
           enforceZOrder();
           return; 
@@ -998,10 +1100,15 @@
               "nato_triage", "diagnosis", "evacuation_recommendation"
           ];
           
-          L.marker([f.geometry.coordinates[1], f.geometry.coordinates[0]], {
+          // --- Added: Append caseId to bindPopup options ---
+          const marker = L.marker([f.geometry.coordinates[1], f.geometry.coordinates[0]], {
             icon: getManIcon(c, dynamicSize)
-          }).bindPopup(popupTable(f.properties, patientKeys), { autoPan: false })
-            .addTo(demoCasesLayer);
+          }).bindPopup(popupTable(f.properties, patientKeys), { autoPan: false, caseId: f.properties.case_id });
+          
+          marker.addTo(demoCasesLayer);
+
+          // --- Added: Reopen if it was open ---
+          if (openCaseId === f.properties.case_id) marker.openPopup();
           
           count++;
         }
@@ -1469,38 +1576,46 @@
         renderHotspots();
     });
     
-    document.getElementById("triRed").addEventListener("change", () => { buildClusters(); renderCases(); renderRoutes(); renderHotspots(); });
-    document.getElementById("triYellow").addEventListener("change", () => { buildClusters(); renderCases(); renderRoutes(); renderHotspots(); });
-    document.getElementById("triGreen").addEventListener("change", () => { buildClusters(); renderCases(); renderRoutes(); renderHotspots(); });
+function applyFilters() {
+        isProgrammatic = true; // Prevent map from jumping when popups reload
+        
+        buildClusters();
+        updateMapDisplay(); // Triggers the Facility popups to update
+        renderCases();
+        renderRoutes();
+        renderHotspots(); // This function already has popup memory built-in!
+        
+        // Trigger the Route popup to update
+        if (typeof updateActiveRoutePopup === 'function') {
+            updateActiveRoutePopup(); 
+        }
+        
+        setTimeout(() => { isProgrammatic = false; }, 50);
+    }
+
+    document.getElementById("triRed").addEventListener("change", applyFilters);
+    document.getElementById("triYellow").addEventListener("change", applyFilters);
+    document.getElementById("triGreen").addEventListener("change", applyFilters);
 
     document.getElementById("lblRed").addEventListener("click", () => {
       document.getElementById("triRed").checked = true;
       document.getElementById("triYellow").checked = false;
       document.getElementById("triGreen").checked = false;
-      buildClusters();
-      renderCases(); 
-      renderRoutes();
-      renderHotspots();
+      applyFilters();
     });
 
     document.getElementById("lblYellow").addEventListener("click", () => {
       document.getElementById("triRed").checked = false;
       document.getElementById("triYellow").checked = true;
       document.getElementById("triGreen").checked = false;
-      buildClusters();
-      renderCases(); 
-      renderRoutes();
-      renderHotspots();
+      applyFilters();
     });
 
     document.getElementById("lblGreen").addEventListener("click", () => {
       document.getElementById("triRed").checked = false;
       document.getElementById("triYellow").checked = false;
       document.getElementById("triGreen").checked = true;
-      buildClusters();
-      renderCases(); 
-      renderRoutes();
-      renderHotspots();
+      applyFilters();
     });
 
     let isProgrammatic = false;
