@@ -11,6 +11,13 @@ from datetime import datetime, timezone
 
 from flask import Flask, Response, abort, render_template, jsonify, request
 
+# External HTTP requests for Overpass API
+try:
+    import requests  # used for fetching real facility data from OpenStreetMap
+    HAVE_REQUESTS = True
+except Exception:
+    HAVE_REQUESTS = False
+
 # --- Healthsites vector-tile stack (optional) ---
 # These imports are only required if you enable the Healthsites shapefile → vector tile layers.
 HAVE_GEOSPATIAL = True
@@ -27,7 +34,6 @@ except Exception:
 
 # --- Demo / simulation data ---
 import pandas as pd
-
 
 # =========================
 # CONFIG
@@ -50,6 +56,34 @@ DEMO_CASES_XLSX = Path(os.getenv("DEMO_CASES_XLSX", DEMO_DIR / "NATO_MASCAL_500_
 DEMO_CACHE_DIR = Path(__file__).resolve().parent / "demo_cache"
 OSRM_CACHE_FILE = DEMO_CACHE_DIR / "osrm_routes.json"
 _osrm_cache_lock = threading.Lock()
+
+# --- Facilities caching ---
+# To avoid repeatedly hitting external APIs during a demo, we store returned
+# facility data keyed by a rounded bounding box in a simple JSON cache.
+#
+# Cache file location: demo_cache/facilities_cache.json
+# You can delete this file at any time to force a fresh fetch.
+
+FACILITIES_CACHE_FILE = DEMO_CACHE_DIR / "facilities_cache.json"
+_facilities_cache_lock = threading.Lock()
+
+def _load_facilities_cache() -> Dict[str, Any]:
+    """Load cached facility FeatureCollections from disk."""
+    if not FACILITIES_CACHE_FILE.exists():
+        return {}
+    try:
+        with FACILITIES_CACHE_FILE.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def _write_facilities_cache(cache: Dict[str, Any]) -> None:
+    """Write the facilities cache to disk atomically."""
+    FACILITIES_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = FACILITIES_CACHE_FILE.with_suffix(".tmp")
+    with tmp_path.open("w", encoding="utf-8") as f:
+        json.dump(cache, f)
+    tmp_path.replace(FACILITIES_CACHE_FILE)
 
 # Performance: don't serve/request node tiles until this zoom
 MIN_ZOOM_NODES = 11
@@ -162,99 +196,412 @@ def _read_json(path: Path) -> Dict[str, Any]:
         return json.load(f)
 
 def _generate_healthsites_facilities(cases_fc: Dict[str, Any], buffer_val: float = 1.5) -> Optional[Dict[str, Any]]:
-    if not _healthsites_available():
-        print(" -> FAILED: _healthsites_available() returned False.")
-        print(" -> Check if 'Europe-node.shp' is inside your 'DATA_DIR' folder.")
-        return None
+    """
+    Attempt to load real-world facility locations and metadata.
 
-    feats = cases_fc.get("features", [])
+    This function now tries multiple data sources in order of preference:
+
+    1. **Overpass API** – If available and requests can be made, the function will query
+       OpenStreetMap via the Overpass API for healthcare-related facilities (hospitals,
+       clinics, doctors) within a bounding box around the casualty locations.  This
+       data source can provide richer tag information than the shipped shapefile and
+       does not require a separately downloaded dataset.  The Overpass API uses a
+       bounding box defined by minimum latitude, minimum longitude, maximum latitude and
+       maximum longitude, as described in the OpenStreetMap Overpass documentation【878746415656765†L468-L470】.
+
+       If the query succeeds and returns one or more facilities, the results are
+       normalized and mapped to the expected output format.  Randomized capacity
+       values are generated (seeded by each facility’s OSM identifier) to preserve
+       deterministic behaviour across runs.  A simple heuristic is applied to map
+       facility types (hospital/clinic/doctor) to an approximate role of care.
+
+    2. **Healthsites Shapefile** – If Overpass is unavailable or returns no data,
+       the function falls back to the original behaviour: reading from the Healthsites
+       shapefile export (Europe-node.shp).  If the shapefile is missing entirely,
+       `None` is returned and a warning is logged.
+
+    Parameters:
+        cases_fc (dict): GeoJSON FeatureCollection of casualty locations.
+        buffer_val (float): Padding (in degrees) around the casualty bounding box used to
+            expand the search area.
+
+    Returns:
+        dict or None: A GeoJSON FeatureCollection containing facility features with
+            synthetic capacity data.
+    """
+    feats = cases_fc.get("features", []) or []
     if not feats:
         print(" -> FAILED: No MASCAL cases found to build a bounding box.")
         return None
 
-    # 1. Establish the "area" by calculating the bounding box of all casualties
-    lons = [f["geometry"]["coordinates"][0] for f in feats]
-    lats = [f["geometry"]["coordinates"][1] for f in feats]
-
-    BUFFER = buffer_val
+    # 1. Compute bounding box of casualties and apply a buffer
+    lons = [float(f["geometry"]["coordinates"][0]) for f in feats]
+    lats = [float(f["geometry"]["coordinates"][1]) for f in feats]
+    BUFFER = float(buffer_val)
     minlon, maxlon = min(lons) - BUFFER, max(lons) + BUFFER
     minlat, maxlat = min(lats) - BUFFER, max(lats) + BUFFER
 
-    # 2. Fast spatial filter using pyogrio bbox reading
-    shp = LAYER_FILES["nodes"]
+    # Round the bounding box to ~2 decimal places for caching to reduce key
+    # cardinality without sacrificing too much geographic specificity.  Two
+    # decimals (~1.1 km at equator) strike a good balance for caching under the
+    # hackathon's scale.
+    bbox_key = f"{minlat:.2f}_{minlon:.2f}_{maxlat:.2f}_{maxlon:.2f}"
+
+    # Attempt to load a cached FeatureCollection for this bounding box.  This
+    # prevents redundant API calls on subsequent runs.  We always guard
+    # modifications with a lock to handle concurrent requests.
+    with _facilities_cache_lock:
+        cache = _load_facilities_cache()
+        cached_fc = cache.get(bbox_key)
+    if cached_fc:
+        # Deep-copy to avoid mutation of cached object downstream
+        return json.loads(json.dumps(cached_fc))
+
+    fc_result: Optional[Dict[str, Any]] = None
+    # 2. Attempt to query Healthsites.io API if API key is provided
     try:
-        print(f" -> Querying shapefile bounding box: {minlon:.2f}, {minlat:.2f}, {maxlon:.2f}, {maxlat:.2f}")
-        # Try default UTF-8 first
-        gdf = gpd.read_file(shp, bbox=(minlon, minlat, maxlon, maxlat), engine="pyogrio", encoding="utf-8")
-    except UnicodeDecodeError:
-        print(" -> UTF-8 decode failed, falling back to Latin-1 encoding...")
-        try:
-            # Fallback for European shapefiles
-            gdf = gpd.read_file(shp, bbox=(minlon, minlat, maxlon, maxlat), engine="pyogrio", encoding="latin1")
-        except Exception as e:
-            print(f" -> FAILED: Error reading shapefile with Latin-1: {e}")
-            return None
+        api_data = _generate_healthsites_api_facilities(
+            minlat=minlat, minlon=minlon, maxlat=maxlat, maxlon=maxlon
+        )
+        if api_data and api_data.get("features"):
+            fc_result = api_data
     except Exception as e:
-        print(f" -> FAILED: Error reading shapefile: {e}")
+        print(f"WARNING: Healthsites API query failed: {e}")
+
+    # 3. Attempt to query Overpass API if Healthsites returned nothing
+    if fc_result is None and HAVE_REQUESTS:
+        try:
+            overpass_data = _generate_overpass_facilities(
+                minlat=minlat, minlon=minlon, maxlat=maxlat, maxlon=maxlon
+            )
+            if overpass_data and overpass_data.get("features"):
+                fc_result = overpass_data
+        except Exception as e:
+            print(f"WARNING: Overpass API query failed: {e}")
+
+    # 4. Fallback to Healthsites shapefile if geospatial libs are available and still no data
+    if fc_result is None:
+        if not _healthsites_available():
+            print(" -> FAILED: _healthsites_available() returned False.")
+            print(" -> Check if 'Europe-node.shp' is inside your 'DATA_DIR' folder.")
+            fc_result = None
+        else:
+            # Perform shapefile filtering and generate synthetic facilities
+            print(f" -> Querying shapefile bounding box: {minlon:.2f}, {minlat:.2f}, {maxlon:.2f}, {maxlat:.2f}")
+            try:
+                gdf = gpd.read_file(
+                    LAYER_FILES["nodes"],
+                    bbox=(minlon, minlat, maxlon, maxlat),
+                    engine="pyogrio",
+                    encoding="utf-8"
+                )
+            except UnicodeDecodeError:
+                print(" -> UTF-8 decode failed, falling back to Latin-1 encoding...")
+                try:
+                    gdf = gpd.read_file(
+                        LAYER_FILES["nodes"],
+                        bbox=(minlon, minlat, maxlon, maxlat),
+                        engine="pyogrio",
+                        encoding="latin1"
+                    )
+                except Exception as e:
+                    print(f" -> FAILED: Error reading shapefile with Latin-1: {e}")
+                    fc_result = None
+                    gdf = None  # type: ignore
+                except Exception:
+                    gdf = None  # type: ignore
+            except Exception as e:
+                print(f" -> FAILED: Error reading shapefile: {e}")
+                gdf = None  # type: ignore
+            if gdf is not None:
+                if gdf.empty:
+                    print(" -> FAILED: Bounding box query returned 0 facilities in this area.")
+                    fc_result = None
+                else:
+                    # Filter by relevant amenities/healthcare types
+                    valid_types = ["hospital", "clinic", "doctors"]
+                    mask = (gdf["amenity"].isin(valid_types)) | (gdf["healthcare"].isin(valid_types))
+                    gdf = gdf[mask]
+                    features = []
+                    possible_specialties = [
+                        "General Surgery", "Orthopedics", "Trauma", "Neurosurgery",
+                        "Burn", "Pediatrics", "OBGYN"
+                    ]
+                    for idx, row in gdf.iterrows():
+                        geom = row.geometry
+                        if geom is None or geom.is_empty:
+                            continue
+                        name = _fix_mojibake(row.get("name"))
+                        if not name or str(name).lower() == "nan":
+                            name = f"Unnamed Facility ({row.get('osm_id', idx)})"
+                        osm_id = row.get("osm_id", idx)
+                        rng = random.Random(str(osm_id))
+
+                        # --- Real-world type (from OSM/Healthsites tags) ---
+                        amenity = (row.get("amenity") or "")
+                        healthcare = (row.get("healthcare") or "")
+                        fac_type = (str(amenity) or str(healthcare)).lower()
+
+                        # Heuristic mapping to Role of Care (NATO-style) based on facility type.
+                        # OSM doesn't encode NATO roles directly, so this is an inference.
+                        if "hospital" in fac_type:
+                            role_int = rng.choices([3, 4], weights=[0.8, 0.2])[0]
+                        elif "clinic" in fac_type:
+                            role_int = 2
+                        elif "doctors" in fac_type:
+                            role_int = 1
+                        else:
+                            role_int = rng.choices([1, 2, 3, 4], weights=[0.5, 0.3, 0.15, 0.05])[0]
+
+                        # Prefer any real bed count if present (often sparse in OSM)
+                        def _safe_int(v):
+                            try:
+                                if v is None:
+                                    return None
+                                s = str(v).strip()
+                                if not s or s.lower() == "nan":
+                                    return None
+                                return int(float(s))
+                            except Exception:
+                                return None
+
+                        beds_real = _safe_int(row.get("beds"))
+                        beds_total = beds_real if (beds_real is not None and beds_real > 0) else (rng.randint(15, 60) * role_int)
+                        beds_av = int(beds_total * rng.uniform(0.1, 0.9))
+                        icu_total = rng.randint(2, 10) * role_int if role_int >= 2 else 0
+                        icu_av = int(icu_total * rng.uniform(0.1, 0.9))
+                        vent_total = icu_total * 2 if icu_total > 0 else rng.randint(0, 2)
+                        vent_av = int(vent_total * rng.uniform(0.1, 0.9))
+
+                        # --- Specialties: prefer real OSM/Healthsites specialty tags, else demo-fill ---
+                        specialties: List[str] = []
+                        spec_raw = row.get("speciality")
+                        if spec_raw is not None and str(spec_raw).strip() and str(spec_raw).lower() != "nan":
+                            for part in str(spec_raw).replace(",", ";").split(";"):
+                                p = part.strip()
+                                if p:
+                                    specialties.append(p)
+
+                        # If we still don't have anything, generate demo specialties
+                        if not specialties:
+                            num_specs = rng.randint(1, 2) + (role_int - 1)
+                            specialties = []
+                            if role_int >= 2:
+                                specialties += ["Blood Bank", "CT", "ICU"]
+                            specialties += rng.sample(possible_specialties, min(num_specs, len(possible_specialties)))
+
+                        # Add emergency as a specialty if tagged
+                        emergency_tag = (row.get("emergency") or "")
+                        if str(emergency_tag).strip().lower() in ("yes", "true", "1"):
+                            specialties.append("Emergency")
+
+                        specialties = sorted(set([s for s in specialties if s]))
+
+                        # --- Additional real-world metadata from the Healthsites export (if present) ---
+                        operator = _fix_mojibake(row.get("operator"))
+                        operator_type = _fix_mojibake(row.get("operator_t"))
+                        contact_phone = _fix_mojibake(row.get("contact_nu"))
+                        opening_hours = _fix_mojibake(row.get("opening_ho"))
+                        website = _fix_mojibake(row.get("url"))
+
+                        addr = {
+                            "housenumber": _fix_mojibake(row.get("addr_house")),
+                            "street": _fix_mojibake(row.get("addr_stree")),
+                            "postcode": _fix_mojibake(row.get("addr_postc")),
+                            "city": _fix_mojibake(row.get("addr_city")),
+                        }
+                        # compact address string for display
+                        addr_parts = [addr.get("street"), addr.get("housenumber"), addr.get("postcode"), addr.get("city")]
+                        address = ", ".join([p for p in addr_parts if p and str(p).lower() != "nan"])
+
+                        staff_doctors = _safe_int(row.get("staff_doct"))
+                        staff_nurses = _safe_int(row.get("staff_nurs"))
+                        props = {
+                            "facility_id": str(osm_id),
+                            "name": name,
+                            "country": "EU",
+                            "in_crisis_area": True,
+                            "role_of_care": f"Role{role_int}",
+                            "specialties": specialties,
+                            "capacity": {
+                                "beds_total": beds_total,
+                                "beds_available": beds_av,
+                                "icu_total": icu_total,
+                                "icu_available": icu_av,
+                                "vent_total": vent_total,
+                                "vent_available": vent_av,
+                            },
+                            # extra metadata (real when available)
+                            "amenity": amenity,
+                            "healthcare": healthcare,
+                            "operator": operator,
+                            "operator_type": operator_type,
+                            "contact_phone": contact_phone,
+                            "opening_hours": opening_hours,
+                            "website": website,
+                            "address": address,
+                            "wheelchair": _fix_mojibake(row.get("wheelchair")),
+                            "dispensing": _fix_mojibake(row.get("dispensing")),
+                            "insurance": _fix_mojibake(row.get("insurance")),
+                            "water_source": _fix_mojibake(row.get("water_sour")),
+                            "electricity": _fix_mojibake(row.get("electricit")),
+                            "operational_status": _fix_mojibake(row.get("operationa")),
+                            "staff": {"doctors": staff_doctors, "nurses": staff_nurses},
+                            "source": "healthmap.io (Auto-generated)",
+                            "last_updated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        }
+                        features.append(
+                            {
+                                "type": "Feature",
+                                "geometry": {"type": "Point", "coordinates": [geom.x, geom.y]},
+                                "properties": props,
+                            }
+                        )
+                    fc_result = {"type": "FeatureCollection", "features": features}
+    # Persist to cache if we produced a result
+    if fc_result is not None:
+        with _facilities_cache_lock:
+            cache = _load_facilities_cache()
+            # Store a deep copy of the result to avoid accidental mutation
+            cache[bbox_key] = json.loads(json.dumps(fc_result))
+            try:
+                _write_facilities_cache(cache)
+            except Exception as e:
+                print(f"WARNING: Failed to write facilities cache: {e}")
+    return fc_result
+
+
+def _generate_overpass_facilities(*, minlat: float, minlon: float, maxlat: float, maxlon: float) -> Optional[Dict[str, Any]]:
+    """
+    Query the Overpass API for healthcare facilities within a bounding box and
+    construct a GeoJSON FeatureCollection with synthetic capacity data.
+
+    The Overpass query searches for nodes, ways and relations tagged as
+    `amenity=hospital`, `amenity=clinic`, `amenity=doctors`, or with
+    equivalent `healthcare` tags.  Ways and relations are represented by
+    their centroid (via the `center` keyword) to obtain a point geometry.
+
+    Parameters:
+        minlat, minlon, maxlat, maxlon (float): south, west, north and east edges of
+            the bounding box (lat/lon order).  The order matches the Overpass
+            bounding box format where the first two values are minimum latitude
+            and minimum longitude and the last two are maximum latitude and
+            maximum longitude【878746415656765†L468-L470】.
+
+    Returns:
+        dict or None: GeoJSON FeatureCollection of facilities, or None on failure.
+    """
+    if not HAVE_REQUESTS:
         return None
 
-    if gdf.empty:
-        print(" -> FAILED: Bounding box query returned 0 facilities in this area.")
+    # Compose Overpass QL query
+    query = f"""
+    [out:json][timeout:120];
+    (
+      node["amenity"~"hospital|clinic|doctors"]({minlat},{minlon},{maxlat},{maxlon});
+      node["healthcare"~"hospital|clinic|doctors"]({minlat},{minlon},{maxlat},{maxlon});
+      way["amenity"~"hospital|clinic|doctors"]({minlat},{minlon},{maxlat},{maxlon});
+      way["healthcare"~"hospital|clinic|doctors"]({minlat},{minlon},{maxlat},{maxlon});
+      relation["amenity"~"hospital|clinic|doctors"]({minlat},{minlon},{maxlat},{maxlon});
+      relation["healthcare"~"hospital|clinic|doctors"]({minlat},{minlon},{maxlat},{maxlon});
+    );
+    out center tags;
+    """
+    url = "https://overpass-api.de/api/interpreter"
+    resp = requests.post(url, data=query.encode("utf-8"), headers={"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}, timeout=180)
+    if resp.status_code != 200:
+        raise RuntimeError(f"Overpass API returned HTTP {resp.status_code}")
+    data = resp.json()
+    elements = data.get("elements", [])
+    if not elements:
         return None
-        
-    print(f" -> Found {len(gdf)} raw locations. Filtering and applying demo data...")
 
-    # 3. Filter out irrelevant facilities (like pharmacies, dentists)
-    valid_types = ["hospital", "clinic", "doctors"]
-    mask = (gdf["amenity"].isin(valid_types)) | (gdf["healthcare"].isin(valid_types))
-    gdf = gdf[mask]
-
-    # 4. Generate mock data for the real locations
-    features = []
-    
-    # Possible specialties to randomize
-    possible_specialties = ["General Surgery", "Orthopedics", "Trauma", "Neurosurgery", "Burn", "Pediatrics", "OBGYN"]
-
-    for idx, row in gdf.iterrows():
-        geom = row.geometry
-        if geom is None or geom.is_empty:
+    features: List[Dict[str, Any]] = []
+    # Predefined specialties map to convert OSM specialties into human-friendly names
+    osm_specialty_mapping = {
+        "pediatrics": "Pediatrics",
+        "paediatrics": "Pediatrics",
+        "gynaecology": "OBGYN",
+        "gynecology": "OBGYN",
+        "surgery": "General Surgery",
+        "trauma": "Trauma",
+        "orthopedics": "Orthopedics",
+        "orthopaedics": "Orthopedics",
+        "neurosurgery": "Neurosurgery",
+        "burn": "Burn",
+        "icu": "ICU",
+        "emergency": "Emergency",
+        "cardiology": "Cardiology",
+        "urology": "Urology",
+    }
+    for el in elements:
+        # Determine coordinates
+        if el.get("type") == "node":
+            lon, lat = el.get("lon"), el.get("lat")
+        else:
+            center = el.get("center") or {}
+            lon, lat = center.get("lon"), center.get("lat")
+        if lon is None or lat is None:
             continue
-
-        name = _fix_mojibake(row.get("name"))
-        
-        if not name or str(name).lower() == "nan":
-            name = f"Unnamed Facility ({row.get('osm_id', idx)})"
-            
-        osm_id = row.get("osm_id", idx)
-
-        # --- NEW: Seed random with facility ID so beds/ICU stay constant across restarts ---
+        tags = el.get("tags") or {}
+        # Determine name
+        name = _fix_mojibake(tags.get("name")) if tags.get("name") else None
+        if not name:
+            name = f"Unnamed Facility ({el.get('type')}_{el.get('id')})"
+        osm_id = f"{el.get('type')}_{el.get('id')}"
+        # Determine type and infer role
+        fac_type = tags.get("amenity") or tags.get("healthcare") or ""
+        fac_type_lower = str(fac_type).lower()
+        if "hospital" in fac_type_lower:
+            role_int = 3
+            # Upgrade to Role4 for large/teaching hospitals
+            if any(
+                kw in str(tags.get("name", "")).lower()
+                for kw in ["university", "clinic centre", "central"]
+            ):
+                role_int = 4
+        elif "clinic" in fac_type_lower:
+            role_int = 2
+        elif "doctors" in fac_type_lower:
+            role_int = 1
+        else:
+            role_int = 1
+        # Determine specialties from OSM tags
+        specialties: List[str] = []
+        # The tag healthcare:speciality may be semicolon separated
+        spec_tags = tags.get("healthcare:speciality") or tags.get("speciality") or tags.get("healthcare_speciality")
+        if spec_tags:
+            for spec in str(spec_tags).split(";"):
+                spec_clean = spec.strip().lower()
+                mapped = osm_specialty_mapping.get(spec_clean)
+                if mapped:
+                    specialties.append(mapped)
+                else:
+                    specialties.append(spec_clean.capitalize())
+        # Additional speciality inference based on keywords
+        for key, val in tags.items():
+            # if a tag key or value contains known specialties
+            for k, v in osm_specialty_mapping.items():
+                if k in str(val).lower() and v not in specialties:
+                    specialties.append(v)
+        # Always include general services based on role
+        if role_int >= 2:
+            for base in ["Blood Bank", "CT", "ICU"]:
+                if base not in specialties:
+                    specialties.append(base)
+        specialties = sorted(set(specialties))
+        # Seed RNG for deterministic capacities
         rng = random.Random(str(osm_id))
-
-        # Assign a random Role of Care
-        role_int = rng.choices([1, 2, 3, 4], weights=[0.4, 0.3, 0.2, 0.1])[0]
-        
-        # Base Beds
         beds_total = rng.randint(15, 60) * role_int
         beds_av = int(beds_total * rng.uniform(0.1, 0.9))
-
-        # ICU
         icu_total = rng.randint(2, 10) * role_int if role_int >= 2 else 0
         icu_av = int(icu_total * rng.uniform(0.1, 0.9))
-        
-        # Ventilators (typically scales with ICU)
         vent_total = icu_total * 2 if icu_total > 0 else rng.randint(0, 2)
         vent_av = int(vent_total * rng.uniform(0.1, 0.9))
-
-        # Randomize specialties based on Role of Care
-        num_specs = rng.randint(1, 2) + (role_int - 1)
-        specialties = ["Blood Bank", "CT", "ICU"] if role_int >= 2 else []
-        specialties += rng.sample(possible_specialties, min(num_specs, len(possible_specialties)))
-        specialties = sorted(list(set(specialties)))
-
         props = {
-            "facility_id": str(osm_id),
+            "facility_id": osm_id,
             "name": name,
-            "country": "EU", 
+            "country": tags.get("addr:country") or "Unknown",
             "in_crisis_area": True,
             "role_of_care": f"Role{role_int}",
             "specialties": specialties,
@@ -264,19 +611,210 @@ def _generate_healthsites_facilities(cases_fc: Dict[str, Any], buffer_val: float
                 "icu_total": icu_total,
                 "icu_available": icu_av,
                 "vent_total": vent_total,
-                "vent_available": vent_av
+                "vent_available": vent_av,
             },
-            "source": "healthmap.io (Auto-generated)",
-            "last_updated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            "source": "OpenStreetMap via Overpass API (Auto-generated)",
+            "last_updated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
-
-        features.append({
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [geom.x, geom.y]},
-            "properties": props
-        })
-
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": props,
+            }
+        )
     return {"type": "FeatureCollection", "features": features}
+
+
+def _generate_healthsites_api_facilities(*, minlat: float, minlon: float, maxlat: float, maxlon: float) -> Optional[Dict[str, Any]]:
+    """
+    Query the Healthsites.io API for facilities within a bounding box.
+
+    This function requires an API key to be provided via the environment variable
+    `HEALTHSITES_API_KEY`.  If no key is set, the function returns `None` without
+    performing any network requests.  The API is paginated; results are fetched
+    page-by-page until no further pages are available.
+
+    The API endpoint accepts an `extent` parameter (minLng,minLat,maxLng,maxLat) to
+    restrict results【546452282617198†L54-L60】.  We request GeoJSON output and flat
+    properties so that tags are returned in a simple dictionary rather than
+    nested structures.  If the API call fails or returns no features, this
+    function returns `None`.
+
+    Parameters:
+        minlat, minlon, maxlat, maxlon (float): bounding box coordinates.
+
+    Returns:
+        dict or None: GeoJSON FeatureCollection or None.
+    """
+    if not HAVE_REQUESTS:
+        return None
+    api_key = os.getenv("HEALTHSITES_API_KEY")
+    if not api_key:
+        # No API key provided; skip attempt
+        return None
+    base_url = "https://healthsites.io/api/v3/facilities/"
+    page = 1
+    features_out: List[Dict[str, Any]] = []
+    while True:
+        params = {
+            "api-key": api_key,
+            "page": page,
+            "extent": f"{minlon},{minlat},{maxlon},{maxlat}",
+            "output": "geojson",
+            "flat-properties": "true",
+            "tag-format": "osm",
+        }
+        resp = requests.get(base_url, params=params, timeout=60)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Healthsites API returned HTTP {resp.status_code}")
+        try:
+            data = resp.json()
+        except Exception as e:
+            raise RuntimeError(f"Failed to decode Healthsites response: {e}")
+        # Determine location of feature collection
+        # Some healthsites deployments wrap features under 'results'
+        fc = None
+        if isinstance(data, dict):
+            if data.get("type") == "FeatureCollection" and "features" in data:
+                fc = data
+            elif "results" in data and isinstance(data["results"], dict):
+                res = data["results"]
+                if res.get("type") == "FeatureCollection" and "features" in res:
+                    fc = res
+        if fc is None:
+            break
+        feats = fc.get("features", []) or []
+        if not feats:
+            break
+        for f in feats:
+            geom = f.get("geometry") or {}
+            coords = None
+            if geom.get("type") == "Point":
+                coords = geom.get("coordinates")
+            elif geom.get("type") in ("Polygon", "MultiPolygon", "LineString"):
+                # Use centroid-like approximation: compute average of first ring
+                coords_list = []
+                def _flatten(nested):
+                    for item in nested:
+                        if isinstance(item[0], (list, tuple)):
+                            for sub in _flatten(item):
+                                yield sub
+                        else:
+                            yield item
+                try:
+                    coords_gen = list(_flatten(geom.get("coordinates")))
+                    lons = [c[0] for c in coords_gen if isinstance(c, (list, tuple))]
+                    lats = [c[1] for c in coords_gen if isinstance(c, (list, tuple))]
+                    if lons and lats:
+                        coords = [sum(lons) / len(lons), sum(lats) / len(lats)]
+                except Exception:
+                    coords = None
+            if not coords or len(coords) < 2:
+                continue
+            lon, lat = coords[0], coords[1]
+            props_raw = f.get("properties") or {}
+            # Flatten tags if nested
+            tags = props_raw
+            # Many healthsites outputs include a 'tags' object; merge it
+            if isinstance(props_raw.get("tags"), dict):
+                tags.update(props_raw.get("tags"))
+            name = _fix_mojibake(tags.get("name")) if tags.get("name") else None
+            if not name:
+                name = f"Unnamed Facility ({f.get('id')})"
+            fac_type = tags.get("amenity") or tags.get("healthcare") or ""
+            fac_type_lower = str(fac_type).lower()
+            if "hospital" in fac_type_lower:
+                role_int = 3
+                if any(
+                    kw in str(name).lower()
+                    for kw in ["university", "central", "teaching"]
+                ):
+                    role_int = 4
+            elif "clinic" in fac_type_lower:
+                role_int = 2
+            elif "doctor" in fac_type_lower:
+                role_int = 1
+            else:
+                role_int = 1
+            # Extract specialties
+            specialties: List[str] = []
+            spec_tags = tags.get("healthcare:speciality") or tags.get("speciality") or tags.get("healthcare_speciality")
+            if spec_tags:
+                for spec in str(spec_tags).split(";"):
+                    spec_clean = spec.strip().lower()
+                    mapped = None
+                    # Map known specialities to nicer names
+                    for k, v in {
+                        "pediatrics": "Pediatrics",
+                        "paediatrics": "Pediatrics",
+                        "gynaecology": "OBGYN",
+                        "gynecology": "OBGYN",
+                        "surgery": "General Surgery",
+                        "trauma": "Trauma",
+                        "orthopedics": "Orthopedics",
+                        "orthopaedics": "Orthopedics",
+                        "neurosurgery": "Neurosurgery",
+                        "burn": "Burn",
+                        "icu": "ICU",
+                        "emergency": "Emergency",
+                        "cardiology": "Cardiology",
+                        "urology": "Urology",
+                    }.items():
+                        if spec_clean == k:
+                            mapped = v
+                            break
+                    if mapped:
+                        specialties.append(mapped)
+                    else:
+                        specialties.append(spec_clean.capitalize())
+            # Add base specialties for higher roles
+            if role_int >= 2:
+                for base in ["Blood Bank", "CT", "ICU"]:
+                    if base not in specialties:
+                        specialties.append(base)
+            specialties = sorted(set(specialties))
+            # Deterministic capacity
+            osm_id = str(f.get("id"))
+            rng = random.Random(osm_id)
+            beds_total = rng.randint(15, 60) * role_int
+            beds_av = int(beds_total * rng.uniform(0.1, 0.9))
+            icu_total = rng.randint(2, 10) * role_int if role_int >= 2 else 0
+            icu_av = int(icu_total * rng.uniform(0.1, 0.9))
+            vent_total = icu_total * 2 if icu_total > 0 else rng.randint(0, 2)
+            vent_av = int(vent_total * rng.uniform(0.1, 0.9))
+            props = {
+                "facility_id": osm_id,
+                "name": name,
+                "country": tags.get("addr:country") or tags.get("country") or "Unknown",
+                "in_crisis_area": True,
+                "role_of_care": f"Role{role_int}",
+                "specialties": specialties,
+                "capacity": {
+                    "beds_total": beds_total,
+                    "beds_available": beds_av,
+                    "icu_total": icu_total,
+                    "icu_available": icu_av,
+                    "vent_total": vent_total,
+                    "vent_available": vent_av,
+                },
+                "source": "Healthsites.io API (Auto-generated)",
+                "last_updated": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            }
+            features_out.append(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                    "properties": props,
+                }
+            )
+        # Check for pagination; assume that if number of features < 20, no more pages
+        if len(feats) < 20:
+            break
+        page += 1
+    if not features_out:
+        return None
+    return {"type": "FeatureCollection", "features": features_out}
 
 def _load_demo_facilities(buffer_val: Optional[float] = None) -> Dict[str, Any]:
     global _demo_facilities_initial, _demo_facilities_state, _current_buffer
