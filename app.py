@@ -5,6 +5,7 @@ import math
 import json
 import random
 import threading
+import tempfile
 from pathlib import Path
 from typing import Dict, Tuple, Optional, List, Any
 from datetime import datetime, timezone
@@ -227,7 +228,7 @@ def _generate_healthsites_facilities(cases_fc: Dict[str, Any], buffer_val: float
             
         osm_id = row.get("osm_id", idx)
 
-        # --- NEW: Seed random with facility ID so beds/ICU stay constant across restarts ---
+        # Seed random with facility ID so beds/ICU stay constant across restarts
         rng = random.Random(str(osm_id))
 
         # Assign a random Role of Care
@@ -338,10 +339,10 @@ def _load_demo_cases() -> Dict[str, Any]:
             base_lon = float(r.get("Longitude"))
             case_id = int(r.get("Case_ID"))
             
-            # --- NEW: Seed random with case_id so jitter survives restarts perfectly ---
+            # Seed random with case_id so jitter survives restarts perfectly
             rng = random.Random(case_id)
-            lat = round(base_lat + rng.uniform(-0.0005, 0.0005), 2)
-            lon = round(base_lon + rng.uniform(-0.0005, 0.0005), 2)
+            lat = base_lat + rng.uniform(-0.0005, 0.0005)
+            lon = base_lon + rng.uniform(-0.0005, 0.0005)
             
             feats.append({
                 "type": "Feature",
@@ -475,7 +476,7 @@ def _pick_facility_for_case(case_feat: Dict[str, Any], facilities_fc: Dict[str, 
     props = case_feat.get("properties") or {}
     triage = props.get("nato_triage", "")
     
-    # Use the new function that considers Diagnosis!
+    # Use the new function that considers Diagnosis
     req = _case_requirements(props) 
     
     case_lon, case_lat = case_feat["geometry"]["coordinates"]
@@ -648,7 +649,6 @@ def _normalize_props(layer: str, row_dict: Dict[str, object]) -> Dict[str, objec
             if val != val:  # NaN
                 val = None
             else:
-                # Add the mojibake fix here
                 val = _fix_mojibake(val)
         except Exception:
             pass
@@ -796,14 +796,20 @@ def api_demo_osrm_cache():
             try:
                 with open(OSRM_CACHE_FILE, "r", encoding="utf-8") as f:
                     cache = json.load(f)
-            except Exception:
-                pass
+            except Exception as e:
+                # If corrupted, don't just pass silently—print a warning
+                print(f"WARNING: Could not load cache, resetting to empty. Error: {e}")
                 
         cache.update(new_data)
         DEMO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        
         try:
-            with open(OSRM_CACHE_FILE, "w", encoding="utf-8") as f:
+            # ATOMIC WRITE: Write to a temp file first, then replace.
+            # This prevents corruption if the server is stopped mid-write.
+            fd, temp_path = tempfile.mkstemp(dir=DEMO_CACHE_DIR, text=True)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(cache, f)
+            os.replace(temp_path, OSRM_CACHE_FILE)
         except Exception as e:
             print(f"Error writing OSRM cache: {e}")
             return jsonify({"ok": False, "reason": str(e)})
