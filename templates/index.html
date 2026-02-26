@@ -329,7 +329,7 @@
             await Promise.all(batch.map(async (task) => {
                 if (!demoRoutesLayer.hasLayer(task.visualLine)) return;
 
-                const startKey = `${task.start[0].toFixed(3)},${task.start[1].toFixed(3)}`;
+                const startKey = `${task.start[0].toFixed(2)},${task.start[1].toFixed(2)}`;
                 const endKey = `${task.end[0].toFixed(3)},${task.end[1].toFixed(3)}`;
                 const cacheKey = `${startKey}|${endKey}`;
 
