@@ -5,6 +5,7 @@ import math
 import json
 import random
 import threading
+import tempfile
 from pathlib import Path
 from typing import Dict, Tuple, Optional, List, Any
 from datetime import datetime, timezone
@@ -227,7 +228,7 @@ def _generate_healthsites_facilities(cases_fc: Dict[str, Any], buffer_val: float
             
         osm_id = row.get("osm_id", idx)
 
-        # --- NEW: Seed random with facility ID so beds/ICU stay constant across restarts ---
+        # Seed random with facility ID so beds/ICU stay constant across restarts
         rng = random.Random(str(osm_id))
 
         # Assign a random Role of Care
@@ -338,7 +339,7 @@ def _load_demo_cases() -> Dict[str, Any]:
             base_lon = float(r.get("Longitude"))
             case_id = int(r.get("Case_ID"))
             
-            # --- NEW: Seed random with case_id so jitter survives restarts perfectly ---
+            # Seed random with case_id so jitter survives restarts perfectly
             rng = random.Random(case_id)
             lat = base_lat + rng.uniform(-0.0005, 0.0005)
             lon = base_lon + rng.uniform(-0.0005, 0.0005)
@@ -377,13 +378,22 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dl/2)**2
     return 2*R*math.asin(math.sqrt(a))
 
-def _triage_requirements(triage: str) -> Dict[str, Any]:
-    triage = (triage or "").lower()
+def _case_requirements(props: Dict[str, Any]) -> Dict[str, Any]:
+    triage = (props.get("nato_triage") or "").lower()
+    diagnosis = props.get("diagnosis") or ""
+    
+    # Determine base bed/ICU needs
     if "immediate" in triage or "(red)" in triage:
-        return {"min_role": 3, "needs_icu": True, "needs_beds": True}
-    if "delayed" in triage or "(yellow)" in triage:
-        return {"min_role": 2, "needs_icu": False, "needs_beds": True}
-    return {"min_role": 1, "needs_icu": False, "needs_beds": True}
+        req = {"min_role": 3, "needs_icu": True, "needs_beds": True}
+    elif "delayed" in triage or "(yellow)" in triage:
+        req = {"min_role": 2, "needs_icu": False, "needs_beds": True}
+    else:
+        req = {"min_role": 1, "needs_icu": False, "needs_beds": True}
+        
+    # Determine specialty requirement
+    req["required_specialty"] = DIAGNOSIS_SPECIALTY_MAP.get(diagnosis)
+    
+    return req
 
 def _role_to_int(role: str) -> int:
     role = (role or "").lower()
@@ -392,28 +402,32 @@ def _role_to_int(role: str) -> int:
     if "role2" in role: return 2
     return 1
 
-def _facility_score(case_lat, case_lon, fac_props: Dict[str, Any], distance_km: float, triage: str) -> float:
+def _facility_score(case_lat, case_lon, fac_props: Dict[str, Any], distance_km: float, triage: str, required_specialty: str = None) -> float:
     cap = fac_props.get("capacity") or {}
     beds_total = max(1, int(cap.get("beds_total") or 1))
     beds_av = int(cap.get("beds_available") or 0)
     occ = 1.0 - (beds_av / beds_total)
     
-    # Increased occupancy penalty from 200 to 1000. 
-    # This forces the system to balance the load among all nearby facilities 
-    # instead of filling up the closest one to 100% first.
+    # Base score is distance + occupancy penalty
     score = distance_km + (occ * 1000.0) 
     
+    # --- SPECIALTY AI LOGIC ---
+    if required_specialty:
+        fac_specialties = fac_props.get("specialties", [])
+        if required_specialty not in fac_specialties:
+            # Add a massive 3000km penalty if they don't have the right specialty.
+            # This makes the algorithm drive past a close facility to find the right specialist.
+            score += 3000.0
+            
     # Check for critical equipment during fallback routing.
-    # If a critical patient is pushed into the "Relaxed/Desperate" pass,
-    # heavily penalize facilities that lack the needed resources.
     triage_low = (triage or "").lower()
     if "immediate" in triage_low or "(red)" in triage_low:
         icu_av = int(cap.get("icu_available") or 0)
         vent_av = int(cap.get("vent_available") or 0)
         if icu_av <= 0:
-            score += 2000.0   # Prefer traveling 2000km over going to a place with no ICU
+            score += 2000.0   
         if vent_av <= 0:
-            score += 5000.0   # Massively avoid facilities with no ventilators
+            score += 5000.0   
             
     return score
 
@@ -432,7 +446,6 @@ def _search_facilities(case_lat, case_lon, facilities_fc, req, max_dist, allow_o
         beds_av = int(cap.get("beds_available") or 0)
         icu_av = int(cap.get("icu_available") or 0)
 
-        # Hard stops for capacity
         if req["needs_beds"] and beds_av <= 0:
             continue
         if req["needs_icu"] and icu_av <= 0:
@@ -443,12 +456,17 @@ def _search_facilities(case_lat, case_lon, facilities_fc, req, max_dist, allow_o
         if dist_km > max_dist:
             continue
 
-        score = _facility_score(case_lat, case_lon, fprops, dist_km, triage)
+        # Pass the specialty to the scoring function
+        score = _facility_score(case_lat, case_lon, fprops, dist_km, triage, req.get("required_specialty"))
+        
         if best_score is None or score < best_score:
             best = fac
             best_score = score
             best_dist = dist_km
-            best_reason = f"Role>={req['min_role']}, ICU_OK={not req['needs_icu'] or icu_av>0}"
+            
+            # Format the reason for the UI
+            spec_text = f"Requires {req['required_specialty']}" if req.get("required_specialty") else "Gen Med"
+            best_reason = f"Role>={req['min_role']}, ICU_OK={not req['needs_icu'] or icu_av>0} ({spec_text})"
             
     return best, best_reason, best_dist
 
@@ -457,26 +475,29 @@ def _pick_facility_for_case(case_feat: Dict[str, Any], facilities_fc: Dict[str, 
                             allow_outside_area: bool) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[float]]:
     props = case_feat.get("properties") or {}
     triage = props.get("nato_triage", "")
-    req = _triage_requirements(triage)
+    
+    # Use the new function that considers Diagnosis
+    req = _case_requirements(props) 
+    
     case_lon, case_lat = case_feat["geometry"]["coordinates"]
 
-    # PASS 1: Strict Match (Ideal conditions)
+    # PASS 1: Strict Match
     best, reason, dist = _search_facilities(case_lat, case_lon, facilities_fc, req, max_distance_km, allow_outside_area, triage)
     if best: return best, reason, dist
 
-    # PASS 2: Relaxed Match (Drop hard ICU requirement, accept 1 step lower role of care just to get them stabilized)
+    # PASS 2: Relaxed Match (Drop ICU req, accept lower role)
     req_relaxed = req.copy()
     req_relaxed["needs_icu"] = False
     req_relaxed["min_role"] = max(1, req["min_role"] - 1)
     best, reason, dist = _search_facilities(case_lat, case_lon, facilities_fc, req_relaxed, max_distance_km, allow_outside_area, triage)
     if best: return best, reason + " (Relaxed Constraints)", dist
 
-    # PASS 3: Desperation Match (Expand radius x3, find literally ANY available bed)
-    req_desp = {"min_role": 1, "needs_icu": False, "needs_beds": True}
+    # PASS 3: Desperation Match (Expand radius x3, find ANY bed, ignore specialty preference)
+    req_desp = {"min_role": 1, "needs_icu": False, "needs_beds": True, "required_specialty": None} # Drop specialty requirement
     best, reason, dist = _search_facilities(case_lat, case_lon, facilities_fc, req_desp, max_distance_km * 3, allow_outside_area, triage)
     if best: return best, reason + " (Desperate/Expanded Radius)", dist
 
-    return None, "System overwhelmed: No beds available within expanded radius", None
+    return None, "System overwhelmed: No beds available", None
 
 def _decrement_capacity(fac_props: Dict[str, Any], triage: str) -> None:
     cap = fac_props.setdefault("capacity", {})
@@ -628,7 +649,6 @@ def _normalize_props(layer: str, row_dict: Dict[str, object]) -> Dict[str, objec
             if val != val:  # NaN
                 val = None
             else:
-                # Add the mojibake fix here
                 val = _fix_mojibake(val)
         except Exception:
             pass
@@ -651,6 +671,42 @@ def _normalize_props(layer: str, row_dict: Dict[str, object]) -> Dict[str, objec
 
     return out
 
+DIAGNOSIS_SPECIALTY_MAP = {
+    # Combat Trauma
+    "Blast polytrauma": "Trauma",
+    "Traumatic amputation": "Trauma", # or General Surgery
+    "GSW extremity": "Orthopedics",
+    "GSW abdomen": "General Surgery",
+    "Blast TBI": "Neurosurgery",
+    "Penetrating shrapnel injury": "Trauma",
+    "Burns (explosion)": "Burn",
+    "Vehicle crush injury": "Trauma",
+    
+    # Civilian / Medical
+    "Burns 20%": "Burn",
+    "Closed fracture": "Orthopedics",
+    "Open fracture": "Orthopedics",
+    "Acute MI": "ICU",
+    "Stroke": "ICU",
+    "Ischemic stroke": "ICU",
+    "Diabetic ketoacidosis": "ICU",
+    "Blast lung injury": "Trauma",
+    "Smoke inhalation": "Burn", # Or ICU
+    "Crush injury": "Trauma",
+    "Severe pneumonia": "ICU",
+    "Sepsis": "ICU",
+    
+    # Lower acuity (can be handled by general medical / Role 1 or 2)
+    "Concussion": None,
+    "Psychological trauma": None,
+    "Asthma attack": None,
+    "Severe asthma exacerbation": None,
+    "COPD exacerbation": None,
+    "Acute appendicitis": "General Surgery",
+    "Renal colic": None,
+    "Pulmonary embolism": "ICU",
+    "Heat stroke": None,
+}
 
 # =========================
 # ROUTES
@@ -658,7 +714,8 @@ def _normalize_props(layer: str, row_dict: Dict[str, object]) -> Dict[str, objec
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    mapbox_token = os.environ.get("MAPBOX_TOKEN", "")
+    return render_template("index.html", mapbox_token=mapbox_token)
 
 @app.route("/favicon.ico")
 def favicon():
@@ -740,14 +797,20 @@ def api_demo_osrm_cache():
             try:
                 with open(OSRM_CACHE_FILE, "r", encoding="utf-8") as f:
                     cache = json.load(f)
-            except Exception:
-                pass
+            except Exception as e:
+                # If corrupted, don't just pass silently—print a warning
+                print(f"WARNING: Could not load cache, resetting to empty. Error: {e}")
                 
         cache.update(new_data)
         DEMO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        
         try:
-            with open(OSRM_CACHE_FILE, "w", encoding="utf-8") as f:
+            # ATOMIC WRITE: Write to a temp file first, then replace.
+            # This prevents corruption if the server is stopped mid-write.
+            fd, temp_path = tempfile.mkstemp(dir=DEMO_CACHE_DIR, text=True)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
                 json.dump(cache, f)
+            os.replace(temp_path, OSRM_CACHE_FILE)
         except Exception as e:
             print(f"Error writing OSRM cache: {e}")
             return jsonify({"ok": False, "reason": str(e)})
