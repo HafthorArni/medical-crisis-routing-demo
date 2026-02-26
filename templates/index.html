@@ -187,8 +187,10 @@
   <div id="map"></div>
 
   <script>
-    // --- TUNABLE VARIABLE ---
+ // --- TUNABLE VARIABLE ---
     const MAX_LOAD_RADIUS = 10.0; 
+    const CACHED_ROADS_ANIMATION_BATCH = 20; // Tune how many cached roads animate simultaneously
+    const CACHED_ROADS_ANIMATION_DELAY = 100; // ms delay between batches for cascading effect
 
     const map = L.map('map', { 
       center: [56.9, 23.7], 
@@ -296,25 +298,56 @@
     // Isolation State
     let isolatedClusterCaseIds = null;
 
-    // --- OSRM Routing Queue for Road-snapping ---
-    let osrmQueue = [];
+    // --- OSRM Routing Queues ---
+    let osrmQueue = [];             // Strict sequential queue for Mapbox/OSRM API
+    let cachedAnimationQueue = [];  // Batch-processed queue for cache animations
     let osrmCache = {}; 
     let isFetchingOsrm = false;
     let osrmGeneration = 0;
 
-    async function processOsrmQueue(generation) {
+    async function processOsrmQueue(generation, animate = false) {
         if (isFetchingOsrm) return;
         isFetchingOsrm = true;
-
-        // Flask injects the token from the .env file here when rendering the template
-        const MAPBOX_TOKEN = "{{ mapbox_token }}";
 
         const summaryEl = document.getElementById("routeSummary");
         let baseSummary = summaryEl.innerHTML.split('<br>')[0];
 
-        let totalTasks = osrmQueue.length;
+        let totalTasks = osrmQueue.length + cachedAnimationQueue.length;
         let processed = 0;
 
+        // --- PHASE 1: Animate Cached Routes ---
+        if (animate && cachedAnimationQueue.length > 0) {
+            // Optional delay before animation starts for dramatic effect
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            while (cachedAnimationQueue.length > 0) {
+                if (generation !== osrmGeneration) break;
+
+                // Take a chunk of tasks dictated by the tunable variable
+                const batch = cachedAnimationQueue.splice(0, CACHED_ROADS_ANIMATION_BATCH);
+
+                batch.forEach(task => {
+                    if (!demoRoutesLayer.hasLayer(task.visualLine)) return;
+                    
+                    const coords = osrmCache[task.cacheKey];
+                    if (coords && coords !== "NOROUTE" && coords !== "FETCHING") {
+                        task.visualLine.setLatLngs(coords);
+                        if (task.hitLine) task.hitLine.setLatLngs(coords);
+                    }
+                });
+
+                processed += batch.length;
+                if (totalTasks > 0) {
+                    const pct = Math.min(100, Math.round((processed / totalTasks) * 100));
+                    summaryEl.innerHTML = `${baseSummary}<br><small style="color:#0a7;">Drawing cached routes... ${pct}%</small>`;
+                }
+
+                // Small delay to create the "cascading" animation
+                await new Promise(r => setTimeout(r, CACHED_ROADS_ANIMATION_DELAY));
+            }
+        }
+
+        // --- PHASE 2: API Fetching (Strictly Sequential to avoid rate limits) ---
         while (osrmQueue.length > 0) {
             if (generation !== osrmGeneration) break;
 
@@ -349,22 +382,20 @@
                     summaryEl.innerHTML = `${baseSummary}<br><small style="color:#b60;">Snapping to roads... ${pct}%</small>`;
                 }
 
-                // Mapbox Directions API URL
-                const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${task.start[0]},${task.start[1]};${task.end[0]},${task.end[1]}?geometries=geojson&overview=simplified&access_token=${MAPBOX_TOKEN}`;
-                
+                const url = `https://router.project-osrm.org/route/v1/driving/${task.start[0]},${task.start[1]};${task.end[0]},${task.end[1]}?overview=simplified&geometries=geojson`;
                 const res = await fetch(url);
                 
                 if (res.status === 429) {
                     osrmCache[cacheKey] = null; 
                     osrmQueue.unshift(task); 
                     processed--; 
-                    console.warn("Mapbox rate limit hit. Waiting 2s...");
-                    await new Promise(r => setTimeout(r, 2000));
+                    console.warn("OSRM API rate limit hit. Waiting 2.5s...");
+                    await new Promise(r => setTimeout(r, 2500));
                     continue;
                 }
 
                 if (!res.ok) {
-                    console.warn(`Mapbox routing failed (HTTP ${res.status}). Coordinates: ${cacheKey}`);
+                    console.warn(`OSRM failed (HTTP ${res.status}). Coordinates: ${cacheKey}`);
                     osrmCache[cacheKey] = "NOROUTE";
                     continue;
                 }
@@ -389,11 +420,11 @@
                     if (task.hitLine) task.hitLine.setLatLngs(roadCoords);
                 }
 
-                // Wait 200ms to stay safely under 300 requests per minute
+                // Wait 200ms to stay safely under OSRM limits
                 await new Promise(r => setTimeout(r, 200));
 
             } catch (e) {
-                console.error("Routing iteration failed:", e);
+                console.error("OSRM Routing iteration failed:", e);
                 osrmCache[cacheKey] = null; 
                 osrmQueue.unshift(task); 
                 processed--; 
@@ -959,6 +990,7 @@
     function renderHotspots(preventReopen = false) {
       // 1. Capture the currently open cluster popup before clearing layers
       let openClusterIndex = null;
+      // Added .isOpen() to guarantee we only restore popups that are actually visible
       if (!preventReopen && map && map._popup && map._popup.isOpen() && map._popup.options && 'clusterIndex' in map._popup.options) {
           openClusterIndex = map._popup.options.clusterIndex;
       }
@@ -974,6 +1006,7 @@
       const showYellow = document.getElementById("triYellow").checked;
       const showGreen = document.getElementById("triGreen").checked;
       
+      // Keep track of the newly generated polygons to re-attach the popup
       let clusterPolygons = {};
 
       activeClusters.forEach((c, index) => {
@@ -1097,17 +1130,22 @@
 
       enforceZOrder();
 
+      // 2. Immediately reopen the popup if it was open before the redraw
       if (openClusterIndex !== null && clusterPolygons[openClusterIndex]) {
           clusterPolygons[openClusterIndex].openPopup();
       }
     }
-
-    function renderRoutes() {
+    
+    function renderRoutes(isNewRun = false) {
+      // Ensure it's explicitly strictly true (protects against DOM Event objects passing through)
+      const animate = isNewRun === true; 
+      
       demoRoutesLayer.clearLayers();
       
       osrmGeneration++;
       isFetchingOsrm = false; 
       osrmQueue = []; 
+      cachedAnimationQueue = []; // Clear the new queue
 
       if (!document.getElementById("showRoutes").checked) {
           enforceZOrder();
@@ -1164,34 +1202,41 @@
                   cr.cluster.radiusMeters
               );
               
-              const routeCoords = [edgeCoord, [cr.facility_coord[1], cr.facility_coord[0]]];
-              
-              // --- NEW CACHE CHECK ---
               const startKey = `${cr.cluster.lon.toFixed(3)},${cr.cluster.lat.toFixed(3)}`;
               const endKey = `${cr.facility_coord[0].toFixed(3)},${cr.facility_coord[1].toFixed(3)}`;
               const cacheKey = `${startKey}|${endKey}`;
+
+              const straightCoords = [edgeCoord, [cr.facility_coord[1], cr.facility_coord[0]]];
               
-              let initialCoords = routeCoords;
-              let needsQueue = true;
-              
-              if (osrmCache[cacheKey] && osrmCache[cacheKey] !== "NOROUTE" && osrmCache[cacheKey] !== "FETCHING") {
-                  initialCoords = osrmCache[cacheKey];
-                  needsQueue = false; // Skip the queue entirely!
+              let initialCoords = straightCoords;
+              let needsApiFetch = true;
+              let needsCacheAnimation = false;
+
+              // If we are not animating and we already snapped this line, instantly draw the curved route
+              if (osrmCache[cacheKey] && osrmCache[cacheKey] !== "FETCHING" && osrmCache[cacheKey] !== "NOROUTE") {
+                  needsApiFetch = false;
+                  if (animate) {
+                      needsCacheAnimation = true;
+                  } else {
+                      initialCoords = osrmCache[cacheKey]; // Snap instantly
+                  }
               }
-              // -----------------------
-              
+
               const visualLine = L.polyline(initialCoords, { weight: dynamicWeight * 2, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              
               const hitLine = L.polyline(initialCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).addTo(demoRoutesLayer);
               hitLine.isHitLine = true;
               hitLine.routeData = cr;
               
-              if (needsQueue) {
+              if (needsApiFetch) {
                   osrmQueue.push({
                       start: [cr.cluster.lon, cr.cluster.lat], 
                       end: cr.facility_coord,
                       visualLine: visualLine,
                       hitLine: hitLine
                   });
+              } else if (needsCacheAnimation) {
+                  cachedAnimationQueue.push({ visualLine, hitLine, cacheKey });
               }
           });
           
@@ -1233,40 +1278,46 @@
               const col = g.severity === 3 ? "#dc2626" : (g.severity === 2 ? "#d97706" : "#16a34a");
               const baseWeight = Math.min(6, dynamicWeight * (1 + (g.patients.length - 1) * 0.15));
 
-              const routeCoords = [[g.start_coord[1], g.start_coord[0]], [g.facility_coord[1], g.facility_coord[0]]];
-              
-              // --- NEW CACHE CHECK ---
               const startKey = `${g.start_coord[0].toFixed(3)},${g.start_coord[1].toFixed(3)}`;
               const endKey = `${g.facility_coord[0].toFixed(3)},${g.facility_coord[1].toFixed(3)}`;
               const cacheKey = `${startKey}|${endKey}`;
+
+              const straightCoords = [[g.start_coord[1], g.start_coord[0]], [g.facility_coord[1], g.facility_coord[0]]];
               
-              let initialCoords = routeCoords;
-              let needsQueue = true;
-              
-              if (osrmCache[cacheKey] && osrmCache[cacheKey] !== "NOROUTE" && osrmCache[cacheKey] !== "FETCHING") {
-                  initialCoords = osrmCache[cacheKey];
-                  needsQueue = false; // Skip the queue entirely!
+              let initialCoords = straightCoords;
+              let needsApiFetch = true;
+              let needsCacheAnimation = false;
+
+              if (osrmCache[cacheKey] && osrmCache[cacheKey] !== "FETCHING" && osrmCache[cacheKey] !== "NOROUTE") {
+                  needsApiFetch = false;
+                  if (animate) {
+                      needsCacheAnimation = true;
+                  } else {
+                      initialCoords = osrmCache[cacheKey]; 
+                  }
               }
-              // -----------------------
-              
+
               const visualLine = L.polyline(initialCoords, { weight: baseWeight, opacity: 0.8, color: col, interactive: false }).addTo(demoRoutesLayer);
+              
               const hitLine = L.polyline(initialCoords, { weight: 20, opacity: 0.01, color: "#000", interactive: true }).addTo(demoRoutesLayer);
               hitLine.isHitLine = true;
               hitLine.routeData = g;
               
-              if (needsQueue) {
+              if (needsApiFetch) {
                   osrmQueue.push({
                       start: g.start_coord,
                       end: g.facility_coord,
                       visualLine: visualLine,
                       hitLine: hitLine
                   });
+              } else if (needsCacheAnimation) {
+                  cachedAnimationQueue.push({ visualLine, hitLine, cacheKey });
               }
           });
       }
       
       enforceZOrder();
-      processOsrmQueue(osrmGeneration); 
+      processOsrmQueue(osrmGeneration, animate);
     }
 
     async function runRouting() {
@@ -1305,7 +1356,8 @@
             }
         });
 
-        renderRoutes();
+        // Trigger animation for the fresh MASCAL run explicitly
+        renderRoutes(true);
 
         const facRes = await fetch(`/api/demo/facilities?buffer=${MAX_LOAD_RADIUS}`);
         const facFc = await facRes.json();
@@ -1317,6 +1369,7 @@
     }
 
     window.isolateClusterByIndex = function(e, idx) {
+        // Stop the click from passing through the popup to the map polygon
         if (e) e.stopPropagation(); 
         
         const c = activeClusters[idx];
@@ -1371,7 +1424,8 @@
     
     document.getElementById("clusterMode").addEventListener("change", () => {
         renderCases();
-        renderRoutes();
+        // Trigger animation for explicitly changing cluster mode display
+        renderRoutes(true);
         renderHotspots();
     });
     
@@ -1447,7 +1501,7 @@
 
     loadAllData();
     refreshHealthsitesStatus().then(() => attachHealthsitesLayers());
-
+    
   </script>
 </body>
 </html>
