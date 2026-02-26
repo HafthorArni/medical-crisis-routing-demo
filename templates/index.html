@@ -1459,7 +1459,7 @@
     document.getElementById("hideUnused").addEventListener("change", updateMapDisplay); 
     document.getElementById("btnRoute").addEventListener("click", runRouting);
     document.getElementById("showPatients").addEventListener("change", renderCases);
-    document.getElementById("showRoutes").addEventListener("change", renderRoutes);
+    document.getElementById("showRoutes").addEventListener("change", (e) => renderRoutes(e.target.checked));
     document.getElementById("showHotspots").addEventListener("change", renderHotspots);
     
     document.getElementById("clusterMode").addEventListener("change", () => {
