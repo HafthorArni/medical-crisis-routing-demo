@@ -714,7 +714,8 @@ DIAGNOSIS_SPECIALTY_MAP = {
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    mapbox_token = os.environ.get("MAPBOX_TOKEN", "")
+    return render_template("index.html", mapbox_token=mapbox_token)
 
 @app.route("/favicon.ico")
 def favicon():

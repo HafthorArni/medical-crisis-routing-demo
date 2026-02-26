@@ -306,6 +306,9 @@
         if (isFetchingOsrm) return;
         isFetchingOsrm = true;
 
+        // Flask injects the token from the .env file here when rendering the template
+        const MAPBOX_TOKEN = "{{ mapbox_token }}";
+
         const summaryEl = document.getElementById("routeSummary");
         let baseSummary = summaryEl.innerHTML.split('<br>')[0];
 
@@ -346,20 +349,22 @@
                     summaryEl.innerHTML = `${baseSummary}<br><small style="color:#b60;">Snapping to roads... ${pct}%</small>`;
                 }
 
-                const url = `https://router.project-osrm.org/route/v1/driving/${task.start[0]},${task.start[1]};${task.end[0]},${task.end[1]}?overview=simplified&geometries=geojson`;
+                // Mapbox Directions API URL
+                const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${task.start[0]},${task.start[1]};${task.end[0]},${task.end[1]}?geometries=geojson&overview=simplified&access_token=${MAPBOX_TOKEN}`;
+                
                 const res = await fetch(url);
                 
                 if (res.status === 429) {
                     osrmCache[cacheKey] = null; 
                     osrmQueue.unshift(task); 
                     processed--; 
-                    console.warn("OSRM API rate limit hit. Waiting 2.5s...");
-                    await new Promise(r => setTimeout(r, 2500));
+                    console.warn("Mapbox rate limit hit. Waiting 2s...");
+                    await new Promise(r => setTimeout(r, 2000));
                     continue;
                 }
 
                 if (!res.ok) {
-                    console.warn(`OSRM failed (HTTP ${res.status}). Coordinates: ${cacheKey}`);
+                    console.warn(`Mapbox routing failed (HTTP ${res.status}). Coordinates: ${cacheKey}`);
                     osrmCache[cacheKey] = "NOROUTE";
                     continue;
                 }
@@ -384,18 +389,17 @@
                     if (task.hitLine) task.hitLine.setLatLngs(roadCoords);
                 }
 
-                await new Promise(r => setTimeout(r, 500));
+                // Wait 200ms to stay safely under 300 requests per minute
+                await new Promise(r => setTimeout(r, 200));
 
             } catch (e) {
-                console.error("OSRM Routing iteration failed:", e);
-                // Handle network errors (like timeouts) gracefully
+                console.error("Routing iteration failed:", e);
                 osrmCache[cacheKey] = null; 
                 osrmQueue.unshift(task); 
                 processed--; 
                 
-                // Wait 3 seconds before retrying to give the public server a break
                 console.warn("Network timeout. Waiting 3 seconds before retrying...");
-                await new Promise(r => setTimeout(r, 5000));
+                await new Promise(r => setTimeout(r, 3000));
             }
         }
         
