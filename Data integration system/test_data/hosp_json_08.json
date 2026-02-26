@@ -1,0 +1,25 @@
+{
+  "facility_dataset_id": "json_08_lywgne",
+  "hospital_name": "J. 08 Care Pavilion",
+  "LAT_LON": {
+    "org_latitude": 64.105711,
+    "facility_lon_deg": -22.986654
+  },
+  "bed_inventory": {
+    "staffedBeds": 174,
+    "siteBedsFree": 35,
+    "facility_icu_capacity": 11
+  },
+  "providerStaff": {
+    "siteDoctorHeadcount": 55,
+    "OrgNurses": 115
+  },
+  "BurnWard": true,
+  "hospitalDepartments": [
+    "obstetrics",
+    "infectious_disease",
+    "cardiology",
+    "cardiac_surgery"
+  ],
+  "UpdatedAt": "2026-02-25T18:00:00Z"
+}

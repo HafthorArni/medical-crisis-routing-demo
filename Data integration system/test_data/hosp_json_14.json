@@ -1,0 +1,24 @@
+{
+  "listing_id": "json_14_hgylwo",
+  "site_facility_name": "J. 14 Care Pavilion",
+  "PROVIDER_SITE_COORDS": {
+    "NorthLatitude": 64.663921,
+    "lonDeg": -22.581957
+  },
+  "facilityBedStats": {
+    "OVERALL_BEDS": 233,
+    "PROVIDER_OPEN_BEDS": 41,
+    "ICU_STATIONS": 19
+  },
+  "ORG_STAFF_COUNTS": {
+    "doctors": 71,
+    "facility_nursing_staff": 188
+  },
+  "SiteBurnWard": false,
+  "ClinicalServices": [
+    "oncology",
+    "infectious_disease",
+    "gastroenterology"
+  ],
+  "OrgUpdatedAt": "2026-02-25T02:00:00Z"
+}

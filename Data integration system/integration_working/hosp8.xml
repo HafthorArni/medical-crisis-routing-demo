@@ -1,0 +1,27 @@
+<!-- hosp8.xml -->
+<Institution>
+  <Identity>
+    <CommonName>Sunrise Teaching Hospital</CommonName>
+  </Identity>
+  <Positioning>
+    <LatitudeNumber>64.7815</LatitudeNumber>
+    <LongitudeNumber>-22.1012</LongitudeNumber>
+  </Positioning>
+  <Utilization>
+    <BedSupply>320</BedSupply>
+    <BedAvailability>77</BedAvailability>
+    <IcuCapacity>22</IcuCapacity>
+  </Utilization>
+  <HumanResources>
+    <PhysicianFTE>120</PhysicianFTE>
+    <NurseFTE>410</NurseFTE>
+  </HumanResources>
+  <ServiceFlags>
+    <BurnUnitFlag>0</BurnUnitFlag>
+  </ServiceFlags>
+  <ServiceLines>
+    <Service>cardiac_surgery</Service>
+    <Service>oncology</Service>
+    <Service>obstetrics</Service>
+  </ServiceLines>
+</Institution>

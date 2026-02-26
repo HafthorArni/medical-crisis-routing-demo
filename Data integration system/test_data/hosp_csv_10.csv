@@ -1,0 +1,2 @@
+ORG_SITE_NAME,LatDeg,SITE_EAST_LONGITUDE,ProviderStaffedBeds,BEDS_FREE,hospitalPhysicians,HOSPITAL_RN_COUNT,ICU_BEDS,ORG_BURN_WARD,SITE_SPECIALTIES,HospitalRefreshedAt,facilitySourceId
+C. 10 Teaching Hospital,81.354205,-8.782113,2363,341,882,1949,169,no,psychiatry|dermatology|pulmonology,2026-02-23T07:00:00Z,csv_50_lbdko

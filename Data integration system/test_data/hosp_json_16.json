@@ -1,0 +1,25 @@
+{
+  "providerId": "json_16_zpotbp",
+  "location_name": "J. 16 General Hospital",
+  "MAP_POINT": {
+    "facility_northing": 64.917431,
+    "PROVIDER_LON_DECIMAL": -22.405573
+  },
+  "HOSPITAL_CAPACITY_METRICS": {
+    "bedCapacity": 261,
+    "hospitalBedsOpenNow": 48,
+    "ICU_CAPACITY": 18
+  },
+  "OrgWorkforce": {
+    "PROVIDER_MD_COUNT": 89,
+    "NursingStaff": 192
+  },
+  "hospital_burn_services": false,
+  "HOSPITAL_SPECIALTY_TAGS": [
+    "orthopedics",
+    "nephrology",
+    "infectious_disease",
+    "oncology"
+  ],
+  "data_timestamp": "2026-02-24T06:00:00Z"
+}

@@ -1,0 +1,25 @@
+{
+  "entry_id": "json_13_kwbqqb",
+  "HOSPITAL_SITE_NAME": "J. 13 General Hospital",
+  "HOSPITAL_LAT_LON": {
+    "NORTH_LATITUDE": 64.675805,
+    "hospitalEasting": -22.659712
+  },
+  "WARD_CAPACITY": {
+    "PROVIDER_NUMBER_OF_BEDS": 231,
+    "HOSPITAL_VACANT_BEDS": 43,
+    "org_icu_stations": 18
+  },
+  "ORG_CLINICAL_STAFF": {
+    "DoctorHeadcount": 72,
+    "Nurses": 168
+  },
+  "burnUnit": true,
+  "Departments": [
+    "oncology",
+    "radiology",
+    "infectious_disease",
+    "pediatrics"
+  ],
+  "last_updated": "2026-02-25T22:00:00Z"
+}

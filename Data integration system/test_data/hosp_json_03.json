@@ -1,0 +1,24 @@
+{
+  "registry_id": "json_03_vqwpsb",
+  "providerCenterName": "J. 03 Teaching Hospital",
+  "SITE_GPS": {
+    "yCoordinate": 63.685242,
+    "LonDecimal": -23.271858
+  },
+  "SITE_WARD_CAPACITY": {
+    "SiteNumberOfBeds": 121,
+    "BedsAvailableNow": 24,
+    "icu_stations": 10
+  },
+  "clinicalStaff": {
+    "md_count": 28,
+    "nursing_headcount": 79
+  },
+  "burnCapability": false,
+  "SPECIALTIES": [
+    "dermatology",
+    "orthopedics",
+    "trauma"
+  ],
+  "SITE_UPDATED_AT": "2026-02-25T07:00:00Z"
+}

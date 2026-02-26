@@ -1,0 +1,2 @@
+ProviderDisplay,CoordLat,CoordLon,TotalWardBeds,CurrentlyOpenBeds,ICUCots,DoctorsOnPayroll,NursesOnPayroll,BurnUnitYN,ServiceTags
+Lava Field Medical Center,64.0459,-22.3184,175,29,8,52,147,yes,"emergency;general_surgery;dermatology"

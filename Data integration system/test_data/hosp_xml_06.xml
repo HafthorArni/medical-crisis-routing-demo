@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<org_entry_id>
+  <LocationName>X. 06 Health Clinic</LocationName>
+  <Coordinates>
+    <north_latitude>72.569317</north_latitude>
+    <Easting>-16.056047</Easting>
+  </Coordinates>
+  <bedsOverview>
+    <BedsLicensed>1272</BedsLicensed>
+    <ORG_OPEN_BEDS>189</ORG_OPEN_BEDS>
+    <hospital_icu_beds>95</hospital_icu_beds>
+  </bedsOverview>
+  <hospitalStaffCounts>
+    <orgPhysicians>446</orgPhysicians>
+    <OrgRegisteredNurses>967</OrgRegisteredNurses>
+  </hospitalStaffCounts>
+  <orgBurnCapability>false</orgBurnCapability>
+  <FacilityCareOfferings>
+    <service_item>psychiatry</service_item>
+    <service_item>hematology</service_item>
+    <service_item>rehabilitation</service_item>
+    <service_item>cardiac_surgery</service_item>
+  </FacilityCareOfferings>
+  <orgRefreshedAt>2026-02-25T09:00:00Z</orgRefreshedAt>
+</org_entry_id>

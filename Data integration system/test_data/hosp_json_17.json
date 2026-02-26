@@ -1,0 +1,24 @@
+{
+  "facility_id": "json_17_kyopbc",
+  "siteInstitutionName": "J. 17 Teaching Hospital",
+  "org_map_point": {
+    "HospitalNorthing": 64.917103,
+    "FacilityEastLongitude": -22.261482
+  },
+  "ORG_INPATIENT_CAPACITY": {
+    "STAFFED_BEDS": 272,
+    "OrgFreeBeds": 54,
+    "INTENSIVE_CARE_SLOTS": 19
+  },
+  "facilityClinicalStaff": {
+    "OrgMdCount": 86,
+    "RN_COUNT": 199
+  },
+  "org_burn_center_flag": false,
+  "FACILITY_SERVICE_PORTFOLIO": [
+    "dermatology",
+    "infectious_disease",
+    "endocrinology"
+  ],
+  "LastUpdated": "2026-02-24T14:00:00Z"
+}

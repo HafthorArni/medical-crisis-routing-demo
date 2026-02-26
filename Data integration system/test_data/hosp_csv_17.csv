@@ -1,0 +1,2 @@
+PROVIDER_NAME,LatitudeValue,LON_DECIMAL_VALUEInfo,total_beds,site_vacant_beds,facility_doctor_headcount,CARE_NURSES,org_critical_care_beds,burnServicesValueInfo,PROVIDER_SPECIALTY_TAGS,OBSERVED_AT,DatasetId
+C. 17 Teaching Hospital,81.957649,-8.250054,2542,341,870,1961,178,no,obstetrics|infectious_disease|pulmonology,2026-02-23T04:00:00Z,csv_57_segrp

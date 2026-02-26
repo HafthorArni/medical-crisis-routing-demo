@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<sourceId>
+  <ProviderName>X. 19 Teaching Hospital</ProviderName>
+  <ProviderPosition>
+    <provider_north_latitude>73.617311</provider_north_latitude>
+    <facility_longitude>-15.145851</facility_longitude>
+  </ProviderPosition>
+  <capacityMetrics>
+    <StaffedBeds>1403</StaffedBeds>
+    <PROVIDER_VACANT_BEDS>190</PROVIDER_VACANT_BEDS>
+    <PROVIDER_ICU_CAPACITY>109</PROVIDER_ICU_CAPACITY>
+  </capacityMetrics>
+  <FacilityPersonnel>
+    <DOCTORS>486</DOCTORS>
+    <provider_nursing_staff>1067</provider_nursing_staff>
+  </FacilityPersonnel>
+  <burn_care_capable>false</burn_care_capable>
+  <specialtyTags>
+    <SERVICE_ITEM>orthopedics</SERVICE_ITEM>
+    <SERVICE_ITEM>cardiology</SERVICE_ITEM>
+    <SERVICE_ITEM>obstetrics</SERVICE_ITEM>
+    <SERVICE_ITEM>gastroenterology</SERVICE_ITEM>
+  </specialtyTags>
+  <PROVIDER_UPDATED_AT>2026-02-25T05:00:00Z</PROVIDER_UPDATED_AT>
+</sourceId>

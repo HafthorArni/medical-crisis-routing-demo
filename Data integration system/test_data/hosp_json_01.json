@@ -1,0 +1,25 @@
+{
+  "PROVIDER_ID": "json_01_acgpos",
+  "OrgHospitalName": "J. 01 Care Pavilion",
+  "org_coordinates": {
+    "northing": 63.507773,
+    "OrgLonDeg": -23.490048
+  },
+  "ORG_WARD_CAPACITY": {
+    "HospitalBedCapacity": 95,
+    "providerBedsAvailableNow": 16,
+    "HospitalIcuCapacity": 7
+  },
+  "PROVIDER_STAFF_COUNTS": {
+    "PROVIDER_DOCTORS": 22,
+    "ProviderRnCount": 55
+  },
+  "facility_burn_unit": false,
+  "facilitySpecialties": [
+    "rehabilitation",
+    "gastroenterology",
+    "pulmonology",
+    "psychiatry"
+  ],
+  "site_data_timestamp": "2026-02-24T04:00:00Z"
+}

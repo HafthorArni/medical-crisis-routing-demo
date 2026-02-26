@@ -1,0 +1,2 @@
+site_provider_name,HOSPITAL_LAT_DECIMAL,ProviderEastLongitude,bedsLicensed,BedsFree,ORG_PROVIDER_PHYSICIANS,NURSING_STAFF,OrgIcuBeds,facility_burn_care_capable,PROVIDER_CLINICAL_SERVICES,LastSeen,datasetId
+C. 03 Health Clinic,80.741634,-9.289846,2315,383,821,1832,176,no,urology|pediatrics|rehabilitation,2026-02-25T11:00:00Z,csv_43_qpgrn

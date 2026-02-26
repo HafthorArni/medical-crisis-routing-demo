@@ -1,0 +1,2 @@
+LOCATION_NAME,latDeg,LON_DEG,facility_number_of_beds,availableBeds,provider_physicians,FACILITY_CARE_NURSES,OrgCriticalCareSlots,burn_ward,Specialties,refreshedAt,site_listing_id
+C. 05 General Hospital,80.97579,-9.196005,2325,302,852,1840,156,no,radiology|dermatology|hematology,2026-02-24T11:00:00Z,csv_45_waocz

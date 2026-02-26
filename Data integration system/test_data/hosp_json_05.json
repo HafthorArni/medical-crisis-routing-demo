@@ -1,0 +1,24 @@
+{
+  "EntryId": "json_05_vukbxo",
+  "providerName": "J. 05 Regional Hospital",
+  "lat_lon": {
+    "LAT_DECIMAL": 63.874618,
+    "PROVIDER_X_COORDINATE": -23.124249
+  },
+  "provider_capacity_metrics": {
+    "ORG_BED_COUNT": 140,
+    "hospitalAvailableBeds": 32,
+    "site_critical_care_beds": 9
+  },
+  "provider_workforce": {
+    "physicians": 40,
+    "SiteNurses": 92
+  },
+  "BURN_SERVICES": false,
+  "providerServicePortfolio": [
+    "obstetrics",
+    "nephrology",
+    "psychiatry"
+  ],
+  "facilityObservedAt": "2026-02-24T19:00:00Z"
+}

@@ -1,0 +1,2 @@
+ORG_PROVIDER_NAME,ProviderNorthing,ProviderLongitude,NUMBER_OF_BEDS,ORG_BEDS_FREE,HOSPITAL_DOCTOR_HEADCOUNT,orgCareNurses,CriticalCareBeds,BurnUnit,CareOfferings,site_last_updated,RecordId
+C. 08 Medical Center,81.192322,-8.936484,2370,393,813,1993,162,no,radiology|endocrinology|nephrology,2026-02-25T09:00:00Z,csv_48_qyjfy

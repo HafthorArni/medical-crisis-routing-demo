@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<PROVIDER_PROVIDER_ID>
+  <hospitalLocationName>X. 18 Teaching Hospital</hospitalLocationName>
+  <providerGps>
+    <lat_decimal>73.501358</lat_decimal>
+    <hospital_east_longitude>-15.287688</hospital_east_longitude>
+  </providerGps>
+  <hospitalBedCapacity>
+    <hospital_number_of_beds>1397</hospital_number_of_beds>
+    <SiteAvailableBeds>221</SiteAvailableBeds>
+    <icuBeds>109</icuBeds>
+  </hospitalBedCapacity>
+  <personnel>
+    <SITE_PHYSICIANS>510</SITE_PHYSICIANS>
+    <PROVIDER_CARE_NURSES>1060</PROVIDER_CARE_NURSES>
+  </personnel>
+  <hospitalBurnUnit>false</hospitalBurnUnit>
+  <org_departments>
+    <SERVICE_ITEM>psychiatry</SERVICE_ITEM>
+    <SERVICE_ITEM>trauma</SERVICE_ITEM>
+    <SERVICE_ITEM>oncology</SERVICE_ITEM>
+  </org_departments>
+  <lastSeen>2026-02-25T03:00:00Z</lastSeen>
+</PROVIDER_PROVIDER_ID>

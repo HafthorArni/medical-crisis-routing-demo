@@ -1,0 +1,24 @@
+{
+  "SourceId": "json_12_grfdyo",
+  "FACILITY_NAME": "J. 12 Regional Hospital",
+  "orgLatLon": {
+    "org_lat_decimal": 64.444399,
+    "lonDecimal": -22.667396
+  },
+  "ORG_BED_INVENTORY": {
+    "ProviderOverallBeds": 209,
+    "HOSPITAL_BEDS_AVAILABLE_NOW": 34,
+    "icu_slots": 14
+  },
+  "provider_staff": {
+    "hospitalProviderPhysicians": 64,
+    "registered_nurses": 141
+  },
+  "PROVIDER_BURN_SERVICES": false,
+  "facility_clinical_services": [
+    "cardiac_surgery",
+    "hematology",
+    "pulmonology"
+  ],
+  "LAST_UPDATED": "2026-02-23T05:00:00Z"
+}

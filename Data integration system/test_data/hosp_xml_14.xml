@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<org_facility_id>
+  <center_name>X. 14 Teaching Hospital</center_name>
+  <PROVIDER_GEO_POINT>
+    <LATITUDE>73.179794</LATITUDE>
+    <hospitalLongitude>-15.458432</hospitalLongitude>
+  </PROVIDER_GEO_POINT>
+  <facilityWardCapacity>
+    <HOSPITAL_OVERALL_BEDS>1342</HOSPITAL_OVERALL_BEDS>
+    <BEDS_OPEN_NOW>224</BEDS_OPEN_NOW>
+    <hospital_critical_care_beds>96</hospital_critical_care_beds>
+  </facilityWardCapacity>
+  <workforce>
+    <PHYSICIANS>472</PHYSICIANS>
+    <registeredNurses>1027</registeredNurses>
+  </workforce>
+  <hospitalBurnCapability>false</hospitalBurnCapability>
+  <OrgCareOfferings>
+    <service_item>orthopedics</service_item>
+    <service_item>infectious_disease</service_item>
+    <service_item>nephrology</service_item>
+  </OrgCareOfferings>
+  <LAST_SEEN>2026-02-23T23:00:00Z</LAST_SEEN>
+</org_facility_id>

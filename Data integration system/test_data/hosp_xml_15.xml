@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<DATASET_ID>
+  <hospitalName>X. 15 Regional Hospital</hospitalName>
+  <HOSPITAL_GPS>
+    <SITE_NORTH_LATITUDE>73.279052</SITE_NORTH_LATITUDE>
+    <X_COORDINATE>-15.41849</X_COORDINATE>
+  </HOSPITAL_GPS>
+  <HospitalInpatientCapacity>
+    <BedCount>1343</BedCount>
+    <BedsOpenNow>228</BedsOpenNow>
+    <siteIcuCapacity>105</siteIcuCapacity>
+  </HospitalInpatientCapacity>
+  <hospitalStaffing>
+    <FACILITY_PROVIDER_PHYSICIANS>495</FACILITY_PROVIDER_PHYSICIANS>
+    <nurseHeadcount>1101</nurseHeadcount>
+  </hospitalStaffing>
+  <site_burn_center_flag>false</site_burn_center_flag>
+  <ORG_SPECIALTY_TAGS>
+    <serviceItem>radiology</serviceItem>
+    <serviceItem>infectious_disease</serviceItem>
+    <serviceItem>gastroenterology</serviceItem>
+    <serviceItem>urology</serviceItem>
+  </ORG_SPECIALTY_TAGS>
+  <UPDATED_AT>2026-02-24T23:00:00Z</UPDATED_AT>
+</DATASET_ID>

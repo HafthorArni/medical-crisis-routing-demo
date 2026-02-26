@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<HospitalSourceId>
+  <facility_site_name>X. 16 General Hospital</facility_site_name>
+  <ORG_SITE_COORDS>
+    <Latitude>73.372634</Latitude>
+    <provider_lon_deg>-15.391211</provider_lon_deg>
+  </ORG_SITE_COORDS>
+  <PROVIDER_BED_STATS>
+    <BEDS_TOTAL>1324</BEDS_TOTAL>
+    <facility_open_beds>183</facility_open_beds>
+    <ORG_ICU_CAPACITY>85</ORG_ICU_CAPACITY>
+  </PROVIDER_BED_STATS>
+  <clinical_staff>
+    <site_attending_physicians>469</site_attending_physicians>
+    <nursing_staff>1136</nursing_staff>
+  </clinical_staff>
+  <BurnCenterFlag>false</BurnCenterFlag>
+  <site_departments>
+    <serviceItem>obstetrics</serviceItem>
+    <serviceItem>rehabilitation</serviceItem>
+    <serviceItem>endocrinology</serviceItem>
+  </site_departments>
+  <FACILITY_UPDATED_AT>2026-02-24T07:00:00Z</FACILITY_UPDATED_AT>
+</HospitalSourceId>

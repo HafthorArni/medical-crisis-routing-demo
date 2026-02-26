@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<HospitalListingId>
+  <OrgClinicName>X. 17 Care Pavilion</OrgClinicName>
+  <COORDINATES>
+    <Northing>73.509144</Northing>
+    <HospitalLonDecimal>-15.327553</HospitalLonDecimal>
+  </COORDINATES>
+  <BED_STATS>
+    <FACILITY_STAFFED_BEDS>1377</FACILITY_STAFFED_BEDS>
+    <ProviderBedsFree>221</ProviderBedsFree>
+    <intensive_care_slots>94</intensive_care_slots>
+  </BED_STATS>
+  <siteClinicalStaff>
+    <FacilityAttendingPhysicians>499</FacilityAttendingPhysicians>
+    <NursingHeadcount>1087</NursingHeadcount>
+  </siteClinicalStaff>
+  <BURN_UNIT>true</BURN_UNIT>
+  <clinicalServices>
+    <service_item>dermatology</service_item>
+    <service_item>nephrology</service_item>
+    <service_item>psychiatry</service_item>
+  </clinicalServices>
+  <siteRefreshedAt>2026-02-24T01:00:00Z</siteRefreshedAt>
+</HospitalListingId>

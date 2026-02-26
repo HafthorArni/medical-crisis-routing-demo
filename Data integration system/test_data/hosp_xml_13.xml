@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<siteSourceId>
+  <FACILITY_PROVIDER_NAME>X. 13 Health Clinic</FACILITY_PROVIDER_NAME>
+  <gps>
+    <HospitalLatDeg>73.033983</HospitalLatDeg>
+    <ProviderEasting>-15.529069</ProviderEasting>
+  </gps>
+  <ProviderBedsOverview>
+    <OverallBeds>1357</OverallBeds>
+    <FACILITY_FREE_BEDS>203</FACILITY_FREE_BEDS>
+    <org_intensive_care_slots>90</org_intensive_care_slots>
+  </ProviderBedsOverview>
+  <ClinicalStaff>
+    <facility_medical_doctors>462</facility_medical_doctors>
+    <FACILITY_NURSING_HEADCOUNT>1092</FACILITY_NURSING_HEADCOUNT>
+  </ClinicalStaff>
+  <SITE_BURN_UNIT>false</SITE_BURN_UNIT>
+  <HospitalServiceLines>
+    <service_item>dermatology</service_item>
+    <service_item>psychiatry</service_item>
+    <service_item>nephrology</service_item>
+  </HospitalServiceLines>
+  <dataTimestamp>2026-02-25T11:00:00Z</dataTimestamp>
+</siteSourceId>

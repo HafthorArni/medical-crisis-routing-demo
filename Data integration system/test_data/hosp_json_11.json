@@ -1,0 +1,24 @@
+{
+  "siteDatasetId": "json_11_lndfip",
+  "org_center_name": "J. 11 Teaching Hospital",
+  "GEO_LOCATION": {
+    "NORTHING": 64.366093,
+    "OrgLonDecimal": -22.763351
+  },
+  "SITE_CAPACITY_METRICS": {
+    "ORG_BEDS_LICENSED": 208,
+    "siteBedsOpenNow": 34,
+    "criticalCareSlots": 16
+  },
+  "provider_staffing": {
+    "ProviderAttendingPhysicians": 60,
+    "orgNurseHeadcount": 150
+  },
+  "BurnCapability": false,
+  "orgServiceLines": [
+    "pulmonology",
+    "neurology",
+    "dermatology"
+  ],
+  "FACILITY_SNAPSHOT_TIME": "2026-02-23T04:00:00Z"
+}

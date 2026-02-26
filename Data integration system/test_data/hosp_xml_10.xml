@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<SITE_PROVIDER_ID>
+  <HospitalName>X. 10 Health Clinic</HospitalName>
+  <provider_lat_lon>
+    <YCoordinate>72.834384</YCoordinate>
+    <EastLongitude>-15.774873</EastLongitude>
+  </provider_lat_lon>
+  <facility_inpatient_capacity>
+    <providerBedsTotal>1280</providerBedsTotal>
+    <vacantBeds>201</vacantBeds>
+    <IcuCapacity>94</IcuCapacity>
+  </facility_inpatient_capacity>
+  <hospital_staff_totals>
+    <org_attending_physicians>466</org_attending_physicians>
+    <CareNurses>1048</CareNurses>
+  </hospital_staff_totals>
+  <BurnCareCapable>false</BurnCareCapable>
+  <SpecialtyTags>
+    <SERVICE_ITEM>gastroenterology</SERVICE_ITEM>
+    <SERVICE_ITEM>psychiatry</SERVICE_ITEM>
+    <SERVICE_ITEM>infectious_disease</SERVICE_ITEM>
+  </SpecialtyTags>
+  <SnapshotTime>2026-02-25T08:00:00Z</SnapshotTime>
+</SITE_PROVIDER_ID>

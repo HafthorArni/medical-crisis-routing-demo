@@ -1,0 +1,24 @@
+{
+  "facility_entry_id": "json_07_jznzwa",
+  "OrgLocationName": "J. 07 Regional Hospital",
+  "PROVIDER_GEO_LOCATION": {
+    "siteLatDeg": 64.169794,
+    "FACILITY_EASTING": -22.967479
+  },
+  "BedsOverview": {
+    "FACILITY_BEDS_LICENSED": 155,
+    "OpenBeds": 26,
+    "SITE_ICU_STATIONS": 13
+  },
+  "ProviderStaff": {
+    "HospitalMdCount": 43,
+    "SITE_CARE_NURSES": 112
+  },
+  "OrgBurnUnit": false,
+  "ORG_CLINICAL_SERVICES": [
+    "neurology",
+    "endocrinology",
+    "psychiatry"
+  ],
+  "ProviderSnapshotTime": "2026-02-24T12:00:00Z"
+}

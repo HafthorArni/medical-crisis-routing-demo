@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<ENTRY_ID>
+  <providerSiteName>X. 11 Teaching Hospital</providerSiteName>
+  <geoPoint>
+    <org_north_latitude>72.967771</org_north_latitude>
+    <LONGITUDE>-15.720943</LONGITUDE>
+  </geoPoint>
+  <BedStats>
+    <overallBeds>1279</overallBeds>
+    <PROVIDER_AVAILABLE_BEDS>195</PROVIDER_AVAILABLE_BEDS>
+    <hospital_icu_stations>90</hospital_icu_stations>
+  </BedStats>
+  <STAFF_TOTALS>
+    <SITE_DOCTORS>469</SITE_DOCTORS>
+    <RegisteredNurses>1015</RegisteredNurses>
+  </STAFF_TOTALS>
+  <BURN_WARD>false</BURN_WARD>
+  <DEPARTMENTS>
+    <SERVICE_ITEM>neurology</SERVICE_ITEM>
+    <SERVICE_ITEM>oncology</SERVICE_ITEM>
+    <SERVICE_ITEM>nephrology</SERVICE_ITEM>
+  </DEPARTMENTS>
+  <updatedAt>2026-02-23T19:00:00Z</updatedAt>
+</ENTRY_ID>

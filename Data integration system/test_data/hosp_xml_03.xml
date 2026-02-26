@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<recordId>
+  <site_hospital_name>X. 03 Teaching Hospital</site_hospital_name>
+  <siteSiteCoords>
+    <SiteYCoordinate>72.272878</SiteYCoordinate>
+    <SITE_LON_DECIMAL>-16.222808</SITE_LON_DECIMAL>
+  </siteSiteCoords>
+  <BEDS_OVERVIEW>
+    <PROVIDER_BED_COUNT>1210</PROVIDER_BED_COUNT>
+    <FacilityBedsFree>168</FacilityBedsFree>
+    <critical_care_slots>82</critical_care_slots>
+  </BEDS_OVERVIEW>
+  <facilityStaffTotals>
+    <attendingPhysicians>416</attendingPhysicians>
+    <RnCount>980</RnCount>
+  </facilityStaffTotals>
+  <HOSPITAL_BURN_WARD>false</HOSPITAL_BURN_WARD>
+  <provider_service_lines>
+    <ServiceItem>pulmonology</ServiceItem>
+    <ServiceItem>gastroenterology</ServiceItem>
+    <ServiceItem>infectious_disease</ServiceItem>
+    <ServiceItem>psychiatry</ServiceItem>
+  </provider_service_lines>
+  <refreshed_at>2026-02-24T10:00:00Z</refreshed_at>
+</recordId>

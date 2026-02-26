@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<hospitalEntryId>
+  <clinic_name>X. 01 Health Clinic</clinic_name>
+  <siteCoords>
+    <ProviderLatDecimal>72.065809</ProviderLatDecimal>
+    <site_easting>-16.372053</site_easting>
+  </siteCoords>
+  <facility_bed_capacity>
+    <NumberOfBeds>1160</NumberOfBeds>
+    <org_vacant_beds>192</org_vacant_beds>
+    <icu_capacity>78</icu_capacity>
+  </facility_bed_capacity>
+  <Staffing>
+    <SiteProviderPhysicians>432</SiteProviderPhysicians>
+    <NURSES>957</NURSES>
+  </Staffing>
+  <BURN_CARE_CAPABLE>false</BURN_CARE_CAPABLE>
+  <clinical_services>
+    <SERVICE_ITEM>psychiatry</SERVICE_ITEM>
+    <SERVICE_ITEM>rehabilitation</SERVICE_ITEM>
+    <SERVICE_ITEM>endocrinology</SERVICE_ITEM>
+    <SERVICE_ITEM>infectious_disease</SERVICE_ITEM>
+  </clinical_services>
+  <updated_at>2026-02-24T08:00:00Z</updated_at>
+</hospitalEntryId>

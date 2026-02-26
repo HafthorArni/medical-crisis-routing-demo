@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<PROVIDER_FACILITY_ID>
+  <providerInstitutionName>X. 08 Health Clinic</providerInstitutionName>
+  <siteGeoLocation>
+    <site_lat_decimal>72.620103</site_lat_decimal>
+    <Longitude>-15.920074</Longitude>
+  </siteGeoLocation>
+  <bedStats>
+    <facility_bed_capacity>1313</facility_bed_capacity>
+    <VACANT_BEDS>204</VACANT_BEDS>
+    <icuStations>83</icuStations>
+  </bedStats>
+  <siteStaffing>
+    <ATTENDING_PHYSICIANS>435</ATTENDING_PHYSICIANS>
+    <REGISTERED_NURSES>1049</REGISTERED_NURSES>
+  </siteStaffing>
+  <burn_center_flag>true</burn_center_flag>
+  <SITE_SERVICE_PORTFOLIO>
+    <service_item>gastroenterology</service_item>
+    <service_item>oncology</service_item>
+    <service_item>cardiology</service_item>
+    <service_item>pulmonology</service_item>
+  </SITE_SERVICE_PORTFOLIO>
+  <orgDataTimestamp>2026-02-24T15:00:00Z</orgDataTimestamp>
+</PROVIDER_FACILITY_ID>

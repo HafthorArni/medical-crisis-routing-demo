@@ -1,0 +1,2 @@
+HOSPITAL_NAME,facility_lat_decimal,xCoordinate,overall_beds,AvailableBeds,SITE_MEDICAL_DOCTORS,NURSING_HEADCOUNT,FACILITY_CRITICAL_CARE_SLOTS,OrgBurnCareCapable,servicePortfolio,HospitalLastSeen,site_record_id
+C. 06 Health Clinic,80.981729,-9.027075,2420,419,867,1926,155,no,gastroenterology|hematology|obstetrics|pediatrics,2026-02-25T01:00:00Z,csv_46_aihrf
