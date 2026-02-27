@@ -4,6 +4,8 @@ Student-built prototype created for the NATO TIDE Hackathon 2026.
 
 This project demonstrates a map-based medical crisis routing workflow for casualty-to-facility decision support. It combines healthcare facility map data with routing and assignment logic to help identify appropriate destinations based on location, accessibility, and available facility information.
 
+![Medical crisis routing dashboard](assets/dashboard.png)
+
 ## What it does
 
 - Visualizes healthcare facilities on an interactive map
