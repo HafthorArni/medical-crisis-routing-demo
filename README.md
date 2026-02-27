@@ -1,7 +1,20 @@
-# Digital Health Integration
----
+# Medical Crisis Routing Demo
 
-## Map data (required)
+Student-built prototype created for the NATO TIDE Hackathon 2026.
+
+This project demonstrates a map-based medical crisis routing workflow for casualty-to-facility decision support. It combines healthcare facility map data with routing and assignment logic to help identify appropriate destinations based on location, accessibility, and available facility information.
+
+## What it does
+
+- Visualizes healthcare facilities on an interactive map
+- Loads Healthsites map data from local shapefiles
+- Supports casualty-to-facility routing workflows
+- Demonstrates map-based decision support for medical crisis response
+- Explores interoperability between open-source geospatial data and operational medical planning tools
+
+
+
+## Data Setup
 
 Create a folder called `map_data/` in the project root and place the Healthsites Europe export there.
 
