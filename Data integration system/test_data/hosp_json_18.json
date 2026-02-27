@@ -1,0 +1,24 @@
+{
+  "source_id": "json_18_rhitbl",
+  "siteCenterName": "J. 18 Care Pavilion",
+  "HOSPITAL_POSITION": {
+    "ProviderYCoordinate": 65.079857,
+    "easting": -22.203211
+  },
+  "CapacityMetrics": {
+    "HospitalBedsLicensed": 276,
+    "ProviderBedsOpenNow": 46,
+    "FacilityIcuSlots": 23
+  },
+  "Workforce": {
+    "MEDICAL_DOCTORS": 89,
+    "HospitalNurses": 214
+  },
+  "site_burn_care_capable": true,
+  "specialties": [
+    "gastroenterology",
+    "nephrology",
+    "urology"
+  ],
+  "facility_refreshed_at": "2026-02-23T15:00:00Z"
+}

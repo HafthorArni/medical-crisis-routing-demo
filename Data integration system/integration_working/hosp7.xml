@@ -1,0 +1,22 @@
+<!-- hosp7.xml -->
+<CareFacilityRecord>
+  <FacilityDisplayName>Glacier Point Medical</FacilityDisplayName>
+  <CoordinatesRef>
+    <LatValue>65.1120</LatValue>
+    <LongValue>-20.3340</LongValue>
+  </CoordinatesRef>
+  <BedsAndStaff>
+    <TotalBedCount>210</TotalBedCount>
+    <FreeBedCount>58</FreeBedCount>
+    <ICUBedCount>11</ICUBedCount>
+    <DoctorCount>67</DoctorCount>
+    <NurseCount>188</NurseCount>
+  </BedsAndStaff>
+  <Capabilities>
+    <SupportsBurnUnit>false</SupportsBurnUnit>
+  </Capabilities>
+  <SpecialtyCatalog>
+    <Item>orthopedics</Item>
+    <Item>nephrology</Item>
+  </SpecialtyCatalog>
+</CareFacilityRecord>

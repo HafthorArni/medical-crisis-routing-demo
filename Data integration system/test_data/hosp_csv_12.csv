@@ -1,0 +1,2 @@
+SiteLocationName,OrgLatDeg,facilityXCoordinate,SITE_BED_CAPACITY,PROVIDER_FREE_BEDS,facilityDoctors,hospital_nurse_headcount,HOSPITAL_CRITICAL_CARE_SLOTS,provider_burn_capability,CLINICAL_SERVICES,observed_at,HOSPITAL_DATASET_ID
+C. 12 Medical Center,81.49457,-8.701577,2380,408,869,1977,172,no,radiology|pulmonology|rehabilitation|infectious_disease,2026-02-25T09:00:00Z,csv_52_ennsf

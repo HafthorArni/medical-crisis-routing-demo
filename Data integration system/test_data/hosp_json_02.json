@@ -1,0 +1,24 @@
+{
+  "FacilityId": "json_02_eyiccw",
+  "provider_clinic_name": "J. 02 Care Pavilion",
+  "geo_location": {
+    "LAT_DEG": 63.640536,
+    "LonDeg": -23.340622
+  },
+  "bedInventory": {
+    "PROVIDER_BED_CAPACITY": 113,
+    "facility_beds_open_now": 20,
+    "IcuStations": 8
+  },
+  "PROVIDER_STAFF": {
+    "HospitalMedicalDoctors": 24,
+    "PROVIDER_NURSES": 65
+  },
+  "BurnServices": false,
+  "providerDepartments": [
+    "radiology",
+    "gastroenterology",
+    "rehabilitation"
+  ],
+  "REFRESHED_AT": "2026-02-23T05:00:00Z"
+}

@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<facility_registry_id>
+  <hospital_facility_name>X. 07 Health Clinic</hospital_facility_name>
+  <facility_map_point>
+    <Y_COORDINATE>72.603945</Y_COORDINATE>
+    <east_longitude>-16.029997</east_longitude>
+  </facility_map_point>
+  <FACILITY_BED_INVENTORY>
+    <FACILITY_BEDS_TOTAL>1243</FACILITY_BEDS_TOTAL>
+    <BEDS_AVAILABLE_NOW>183</BEDS_AVAILABLE_NOW>
+    <CRITICAL_CARE_BEDS>88</CRITICAL_CARE_BEDS>
+  </FACILITY_BED_INVENTORY>
+  <STAFF_COUNTS>
+    <providerMedicalDoctors>446</providerMedicalDoctors>
+    <OrgNursingStaff>1031</OrgNursingStaff>
+  </STAFF_COUNTS>
+  <SiteBurnCapability>false</SiteBurnCapability>
+  <FacilityServiceLines>
+    <ServiceItem>pediatrics</ServiceItem>
+    <ServiceItem>orthopedics</ServiceItem>
+    <ServiceItem>psychiatry</ServiceItem>
+    <ServiceItem>rehabilitation</ServiceItem>
+  </FacilityServiceLines>
+  <providerLastSeen>2026-02-23T04:00:00Z</providerLastSeen>
+</facility_registry_id>

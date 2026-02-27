@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<FACILITY_LISTING_ID>
+  <CENTER_NAME>X. 05 Regional Hospital</CENTER_NAME>
+  <facility_coordinates>
+    <y_coordinate>72.439855</y_coordinate>
+    <EAST_LONGITUDE>-16.158828</EAST_LONGITUDE>
+  </facility_coordinates>
+  <providerBedCapacity>
+    <org_beds_total>1270</org_beds_total>
+    <FreeBeds>168</FreeBeds>
+    <ProviderCriticalCareSlots>96</ProviderCriticalCareSlots>
+  </providerBedCapacity>
+  <facility_provider_staff>
+    <medical_doctors>419</medical_doctors>
+    <site_rn_count>949</site_rn_count>
+  </facility_provider_staff>
+  <facility_burn_capability>false</facility_burn_capability>
+  <facility_departments>
+    <service_item>dermatology</service_item>
+    <service_item>endocrinology</service_item>
+    <service_item>cardiac_surgery</service_item>
+    <service_item>urology</service_item>
+  </facility_departments>
+  <FacilityLastUpdated>2026-02-25T08:00:00Z</FacilityLastUpdated>
+</FACILITY_LISTING_ID>

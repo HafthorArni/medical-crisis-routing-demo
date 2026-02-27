@@ -1,0 +1,24 @@
+{
+  "HospitalRecordId": "json_09_yxxpmc",
+  "HOSPITAL_PROVIDER_NAME": "J. 09 Medical Center",
+  "facility_site_coords": {
+    "hospital_north_latitude": 64.255843,
+    "FacilityLonDecimal": -22.894197
+  },
+  "site_beds_overview": {
+    "BedsTotal": 188,
+    "org_beds_open_now": 30,
+    "IntensiveCareSlots": 14
+  },
+  "staffTotals": {
+    "MD_COUNT": 52,
+    "HOSPITAL_NURSING_HEADCOUNT": 118
+  },
+  "ProviderBurnWard": true,
+  "serviceLines": [
+    "gastroenterology",
+    "rehabilitation",
+    "urology"
+  ],
+  "facilityDataTimestamp": "2026-02-25T20:00:00Z"
+}

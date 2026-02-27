@@ -1,0 +1,2 @@
+OrganizationName,Lat_num,Lon_num,BedStock,BedVacancy,ICU_Beds_Count,PhysiciansHeadcount,NursingHeadcountTotal,BurnCareAvailable,DeptList
+Aurora Coast Hospital,64.6923,-21.7341,248,61,15,88,265,false,"oncology|urology|radiology"

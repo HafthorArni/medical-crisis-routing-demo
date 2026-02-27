@@ -1,0 +1,2 @@
+ProviderHospitalName,orgYCoordinate,XCoordinate,totalBeds,available_beds,PROVIDER_PHYSICIANS,siteNursingStaff,CRITICAL_CARE_SLOTS,BURN_CENTER_FLAG,careOfferings,providerObservedAt,facilityProviderId
+C. 11 Care Pavilion,81.447506,-8.702262,2416,302,849,1853,176,no,oncology|cardiac_surgery|infectious_disease,2026-02-25T16:00:00Z,csv_51_obxzm

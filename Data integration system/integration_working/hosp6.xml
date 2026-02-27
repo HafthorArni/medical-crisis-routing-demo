@@ -1,0 +1,25 @@
+<!-- hosp6.xml -->
+<ProviderSite>
+  <TitleText>Fjordside Community Hospital</TitleText>
+  <MapPosition>
+    <LatDeg>64.4021</LatDeg>
+    <LonDeg>-21.1219</LonDeg>
+  </MapPosition>
+  <ResourceSummary>
+    <LicensedInpatientBeds>140</LicensedInpatientBeds>
+    <BedsOpenForAdmission>33</BedsOpenForAdmission>
+    <IntensiveCareBedspaces>9</IntensiveCareBedspaces>
+  </ResourceSummary>
+  <StaffRoster>
+    <DoctorsHeadcount>41</DoctorsHeadcount>
+    <NursingHeadcount>112</NursingHeadcount>
+  </StaffRoster>
+  <SpecialServices>
+    <BurnUnitPresent>true</BurnUnitPresent>
+  </SpecialServices>
+  <Departments>
+    <Dept>pulmonology</Dept>
+    <Dept>infectious_disease</Dept>
+    <Dept>radiology</Dept>
+  </Departments>
+</ProviderSite>

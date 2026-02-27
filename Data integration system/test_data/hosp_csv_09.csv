@@ -1,0 +1,2 @@
+org_institution_name,latitude,HospitalLonDeg,TOTAL_BEDS,facility_available_beds,ProviderPhysicians,nursingHeadcount,siteIntensiveCareSlots,burn_unit,siteClinicalServices,provider_last_updated,entryId
+C. 09 Regional Hospital,81.2645,-8.866128,2404,405,873,1965,182,no,trauma|pulmonology|endocrinology|obstetrics,2026-02-23T05:00:00Z,csv_49_scobo

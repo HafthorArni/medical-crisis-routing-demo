@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<RegistryId>
+  <ClinicName>X. 12 Teaching Hospital</ClinicName>
+  <POSITION>
+    <hospitalLatitude>72.977304</hospitalLatitude>
+    <lon_deg>-15.610448</lon_deg>
+  </POSITION>
+  <siteBedCapacity>
+    <ORG_NUMBER_OF_BEDS>1299</ORG_NUMBER_OF_BEDS>
+    <HOSPITAL_OPEN_BEDS>224</HOSPITAL_OPEN_BEDS>
+    <icuCapacity>91</icuCapacity>
+  </siteBedCapacity>
+  <OrgStaffing>
+    <doctorHeadcount>478</doctorHeadcount>
+    <OrgNursingHeadcount>1097</OrgNursingHeadcount>
+  </OrgStaffing>
+  <provider_burn_unit>false</provider_burn_unit>
+  <org_service_portfolio>
+    <ServiceItem>dermatology</ServiceItem>
+    <ServiceItem>endocrinology</ServiceItem>
+    <ServiceItem>obstetrics</ServiceItem>
+    <ServiceItem>psychiatry</ServiceItem>
+  </org_service_portfolio>
+  <hospitalDataTimestamp>2026-02-23T09:00:00Z</hospitalDataTimestamp>
+</RegistryId>

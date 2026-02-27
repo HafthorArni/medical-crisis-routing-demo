@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<ProviderDatasetId>
+  <hospital_institution_name>X. 02 Regional Hospital</hospital_institution_name>
+  <SITE_COORDS>
+    <orgNorthing>72.193681</orgNorthing>
+    <SITE_LONGITUDE>-16.399815</SITE_LONGITUDE>
+  </SITE_COORDS>
+  <OrgCapacity>
+    <bed_count>1187</bed_count>
+    <HospitalFreeBeds>162</HospitalFreeBeds>
+    <SiteCriticalCareSlots>81</SiteCriticalCareSlots>
+  </OrgCapacity>
+  <HOSPITAL_PERSONNEL>
+    <DOCTOR_HEADCOUNT>439</DOCTOR_HEADCOUNT>
+    <ORG_RN_COUNT>977</ORG_RN_COUNT>
+  </HOSPITAL_PERSONNEL>
+  <FacilityBurnWard>false</FacilityBurnWard>
+  <care_offerings>
+    <serviceItem>pediatrics</serviceItem>
+    <serviceItem>psychiatry</serviceItem>
+    <serviceItem>obstetrics</serviceItem>
+  </care_offerings>
+  <RefreshedAt>2026-02-24T12:00:00Z</RefreshedAt>
+</ProviderDatasetId>

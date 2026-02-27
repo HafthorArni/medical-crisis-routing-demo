@@ -1,0 +1,25 @@
+{
+  "ProviderListingId": "json_15_fkbjzg",
+  "CenterName": "J. 15 Medical Center",
+  "orgGps": {
+    "northLatitude": 64.830904,
+    "lon_decimal": -22.419639
+  },
+  "SITE_BED_INVENTORY": {
+    "facility_total_beds": 249,
+    "beds_open_now": 39,
+    "criticalCareBeds": 19
+  },
+  "STAFFING": {
+    "attending_physicians": 76,
+    "care_nurses": 172
+  },
+  "PROVIDER_BURN_CENTER_FLAG": false,
+  "HospitalCareOfferings": [
+    "oncology",
+    "nephrology",
+    "orthopedics",
+    "psychiatry"
+  ],
+  "orgSnapshotTime": "2026-02-24T23:00:00Z"
+}

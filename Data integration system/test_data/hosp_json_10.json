@@ -1,0 +1,24 @@
+{
+  "provider_source_id": "json_10_tvzndr",
+  "SiteName": "J. 10 Health Clinic",
+  "MapPoint": {
+    "LatDecimal": 64.323475,
+    "HOSPITAL_X_COORDINATE": -22.740605
+  },
+  "HospitalCapacity": {
+    "numberOfBeds": 191,
+    "SiteOpenBeds": 36,
+    "ICU_SLOTS": 15
+  },
+  "PROVIDER_PERSONNEL": {
+    "facility_physicians": 56,
+    "NurseHeadcount": 129
+  },
+  "FACILITY_BURN_SERVICES": false,
+  "ServicePortfolio": [
+    "orthopedics",
+    "rehabilitation",
+    "endocrinology"
+  ],
+  "FacilityLastSeen": "2026-02-23T18:00:00Z"
+}

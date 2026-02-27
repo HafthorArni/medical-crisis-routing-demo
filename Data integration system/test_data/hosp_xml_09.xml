@@ -1,0 +1,24 @@
+<?xml version="1.0" ?>
+<registryId>
+  <facility_name>X. 09 Medical Center</facility_name>
+  <latLon>
+    <site_latitude>72.778326</site_latitude>
+    <org_longitude>-15.833935</org_longitude>
+  </latLon>
+  <CAPACITY_METRICS>
+    <HospitalStaffedBeds>1299</HospitalStaffedBeds>
+    <openBeds>209</openBeds>
+    <icuSlots>100</icuSlots>
+  </CAPACITY_METRICS>
+  <Personnel>
+    <MedicalDoctors>438</MedicalDoctors>
+    <nurses>1036</nurses>
+  </Personnel>
+  <FACILITY_BURN_CENTER_FLAG>false</FACILITY_BURN_CENTER_FLAG>
+  <departments>
+    <SERVICE_ITEM>nephrology</SERVICE_ITEM>
+    <SERVICE_ITEM>dermatology</SERVICE_ITEM>
+    <SERVICE_ITEM>trauma</SERVICE_ITEM>
+  </departments>
+  <orgLastUpdated>2026-02-24T10:00:00Z</orgLastUpdated>
+</registryId>

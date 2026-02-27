@@ -1,0 +1,24 @@
+<!-- hosp5.xml -->
+<HospitalProfile>
+  <PublicLabel>Harborview Regional Clinic</PublicLabel>
+  <Geo>
+    <Northing>63.9872</Northing>
+    <Easting>-22.5431</Easting>
+  </Geo>
+  <CapacityMetrics>
+    <WardBedCeiling>96</WardBedCeiling>
+    <BedsVacantNow>14</BedsVacantNow>
+    <ICUStations>6</ICUStations>
+  </CapacityMetrics>
+  <WorkforceCounts>
+    <PhysiciansTotal>28</PhysiciansTotal>
+    <NursesTotal>74</NursesTotal>
+  </WorkforceCounts>
+  <Units>
+    <BurnCareSupported>false</BurnCareSupported>
+  </Units>
+  <ClinicalFocus>
+    <Line>geriatrics</Line>
+    <Line>endocrinology</Line>
+  </ClinicalFocus>
+</HospitalProfile>

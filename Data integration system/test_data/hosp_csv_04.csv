@@ -1,0 +1,2 @@
+FacilityName,ProviderLatitude,longitude,HospitalBedsTotal,vacant_beds,ProviderDoctorHeadcount,site_nursing_headcount,FACILITY_ICU_BEDS,burnCareCapable,service_portfolio,observedAt,site_facility_id
+C. 04 General Hospital,80.856266,-9.275924,2366,334,804,1970,174,no,urology|hematology|cardiac_surgery,2026-02-23T12:00:00Z,csv_44_mfziq

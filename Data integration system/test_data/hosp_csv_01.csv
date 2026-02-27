@@ -1,0 +1,2 @@
+FacilityHospitalName,hospitalYCoordinate,siteXCoordinate,beds_total,bedsAvailableNow,PROVIDER_PROVIDER_PHYSICIANS,FACILITY_NURSES,IcuSlots,burnCenterFlag,SERVICE_LINES,ORG_OBSERVED_AT,orgRecordId
+C. 01 Regional Hospital,80.563236,-9.377537,2342,406,824,1898,176,no,pediatrics|dermatology|orthopedics|trauma,2026-02-24T13:00:00Z,csv_41_ofzhh

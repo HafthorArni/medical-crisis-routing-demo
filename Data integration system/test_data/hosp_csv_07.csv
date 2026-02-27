@@ -1,0 +1,2 @@
+facility_facility_name,FacilityLatDeg,LON_DECIMAL,orgBedCapacity,site_beds_available_now,AttendingPhysicians,facility_registered_nurses,ORG_ICU_SLOTS,burnServices,CARE_OFFERINGS,DATA_TIMESTAMP,org_registry_id
+C. 07 General Hospital,81.098703,-8.992565,2395,404,843,1831,180,yes,rehabilitation|dermatology|gastroenterology,2026-02-24T17:00:00Z,csv_47_ajlgi

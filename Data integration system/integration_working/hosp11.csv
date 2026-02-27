@@ -1,0 +1,2 @@
+SiteName,LatitudeValue,LongitudeValue,InpatientBedCapacity,BedsFreeNow,IntensiveCareUnits,DoctorTotalCount,NurseTotalCount,BurnUnitIndicator,SpecialtiesCSV
+Moss Valley Infirmary,65.0207,-20.8879,82,9,3,19,58,0,"family_medicine,geriatrics,rehabilitation"

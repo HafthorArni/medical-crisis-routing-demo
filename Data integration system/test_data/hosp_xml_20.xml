@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<REGISTRY_ID>
+  <FacilityClinicName>X. 20 Care Pavilion</FacilityClinicName>
+  <facilityGeoPoint>
+    <FACILITY_NORTH_LATITUDE>73.682599</FACILITY_NORTH_LATITUDE>
+    <orgXCoordinate>-15.142658</orgXCoordinate>
+  </facilityGeoPoint>
+  <hospital_bed_stats>
+    <BEDS_LICENSED>1426</BEDS_LICENSED>
+    <beds_free>230</beds_free>
+    <CriticalCareSlots>106</CriticalCareSlots>
+  </hospital_bed_stats>
+  <SiteProviderStaff>
+    <HOSPITAL_ATTENDING_PHYSICIANS>505</HOSPITAL_ATTENDING_PHYSICIANS>
+    <siteRegisteredNurses>1185</siteRegisteredNurses>
+  </SiteProviderStaff>
+  <BURN_CAPABILITY>false</BURN_CAPABILITY>
+  <ServiceLines>
+    <SERVICE_ITEM>rehabilitation</SERVICE_ITEM>
+    <SERVICE_ITEM>endocrinology</SERVICE_ITEM>
+    <SERVICE_ITEM>orthopedics</SERVICE_ITEM>
+    <SERVICE_ITEM>gastroenterology</SERVICE_ITEM>
+  </ServiceLines>
+  <ProviderDataTimestamp>2026-02-23T05:00:00Z</ProviderDataTimestamp>
+</REGISTRY_ID>

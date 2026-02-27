@@ -1,0 +1,2 @@
+hospital_clinic_name,LATITUDE_VALUEInfo,lonDecimalValueInfo,PROVIDER_BEDS_LICENSED,facility_vacant_beds,medicalDoctors,nursingStaff,FacilityIntensiveCareSlots,BurnWardValue,SERVICE_PORTFOLIO,ProviderRefreshedAt,ProviderId
+C. 19 Health Clinic,82.093024,-8.178632,2510,387,894,2048,172,no,dermatology|gastroenterology|orthopedics,2026-02-24T01:00:00Z,csv_59_ibwta

@@ -1,0 +1,24 @@
+{
+  "org_source_id": "json_06_totlpj",
+  "provider_location_name": "J. 06 Care Pavilion",
+  "map_point": {
+    "lat_deg": 64.011736,
+    "EASTING": -23.107376
+  },
+  "BED_CAPACITY": {
+    "hospitalBedCount": 155,
+    "SITE_FREE_BEDS": 32,
+    "PROVIDER_ICU_SLOTS": 12
+  },
+  "PERSONNEL": {
+    "FACILITY_MD_COUNT": 48,
+    "NURSE_HEADCOUNT": 100
+  },
+  "PROVIDER_BURN_CARE_CAPABLE": false,
+  "SPECIALTY_TAGS": [
+    "radiology",
+    "endocrinology",
+    "urology"
+  ],
+  "SNAPSHOT_TIME": "2026-02-23T19:00:00Z"
+}
